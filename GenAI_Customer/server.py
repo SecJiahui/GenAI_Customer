@@ -70,8 +70,8 @@ chart_sales = mesa.visualization.ChartModule(
 # Add more chart modules as needed
 
 model_params = {
-    "num_customers": mesa.visualization.Slider("Number of Customers", 50, 10, 100, 10, 1),
-    "num_products": mesa.visualization.Slider("Number of Products", 20, 10, 100, 10, 1),
+    "num_customers": mesa.visualization.Slider("Number of Customers", 10, 5, 30, 5, 1),
+    "num_products": mesa.visualization.Slider("Number of Products", 10, 5, 30, 5, 1),
     "num_retailers": mesa.visualization.Slider("Number of Retailers", 10, 5, 30, 2, 1),
     # Add more parameters as needed
 }

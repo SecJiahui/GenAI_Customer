@@ -2,6 +2,8 @@ import mesa
 import random
 from enum import Enum
 
+import numpy as np
+
 
 class State(Enum):
     LowSatisfaction = 0
@@ -25,25 +27,40 @@ def number_HighSatisfaction(model):
     return number_state(model, State.HighSatisfaction)
 
 
+def initialize_interests():
+    potential_interests = ["sports", "technology", "fashion", "travel", "music"]
+    return random.sample(potential_interests, k=1)
+
+
+def initialize_keyword():
+    potential_keyword = ["sports", "technology", "fashion", "travel", "music"]
+    # return random.sample(potential_keyword, k=random.randint(1, len(potential_keyword)))
+    return random.sample(potential_keyword, k=2)
+
+
+def initialize_brand():
+    potential_brand = ["A", "B", "C", "D", "E"]
+    return random.sample(potential_brand, 1)
+
+
 class CustomerAgent(mesa.Agent):
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
-        # Customer attributes
         self.shopping_history = []
         self.shopping_amount = 0
-        self.areas_of_interest = []
-        self.satisfaction = random.uniform(0, 1)
-        self.purchase_threshold = random.uniform(0, 1)
-        self.price_sensitivity = random.uniform(0, 1)
-        self.quality_sensitivity = random.uniform(0, 1)
-        self.discount_sensitivity = random.uniform(0, 1)
-        self.brand_loyalty = random.uniform(0, 1)
+        self.interests = initialize_interests()  # initialize interest
+        self.satisfaction = random.uniform(0.3, 0.7)
+        self.purchase_threshold = np.random.normal(0.5, 0.1)  # Normal distribution
+        self.price_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
+        self.quality_sensitivity = np.random.beta(5, 2)  # Beta distribution, tends to lower quality sensitivity
+        self.discount_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
+        self.brand_loyalty = np.random.beta(2, 2)  # Beta distribution, balanced brand loyalty
         self.state = self.get_satisfaction_level()
 
     def get_satisfaction_level(self):
         if self.satisfaction >= 0.8:
             return State.HighSatisfaction
-        elif 0.6 <= self.satisfaction < 0.8:
+        elif 0.4 <= self.satisfaction < 0.8:
             return State.MediumSatisfaction
         else:
             return State.LowSatisfaction
@@ -59,31 +76,39 @@ class CustomerAgent(mesa.Agent):
         product_keywords = product.keywords
         brand = product.brand
 
+        purchase_decision = False
+
         # Calculate weighted factors
-        price_factor = self.price_sensitivity * product_price
+        price_factor = (1 - self.price_sensitivity) * (1 - product_price / 10)
         quality_factor = self.quality_sensitivity * product_quality
         discount_factor = self.discount_sensitivity * product_discount
 
         decision_factor = price_factor + quality_factor + discount_factor
 
+        # print Decision Factors information
+        print(
+            f"Decision Factors for product: {product.unique_id}, with Price: {price_factor}, Quality: {quality_factor}"
+        )
+
         # Increase decision factor if product keywords match customer interests
-        for interest in self.areas_of_interest:
+        for interest in self.interests:
             if interest in product_keywords:
-                decision_factor += 0.1
+                decision_factor += 0.2
 
         # Increase decision factor if product brand matches customer shopping list
         if brand in self.shopping_history:
-            decision_factor += 0.1 * self.brand_loyalty
+            decision_factor += (0.1 * self.brand_loyalty)
+            print(f"Brand: {brand} has been purchased before.")
 
-        # print Decision Factors infomation
-        print(f"Decision Factors - Price: {price_factor}, Quality: {quality_factor}, "
-              f"Discount: {discount_factor}, Total: {decision_factor}")
+        print(f"Total: {decision_factor}")
 
         # Make a purchase decision based on decision factor and threshold
-        purchase_threshold = 0.6
+        purchase_threshold = 1.2
         if decision_factor > purchase_threshold:
+            purchase_decision = True
+
+        if purchase_decision:
             product.sales_count += 1
-            self.areas_of_interest.extend(product.keywords)
             print("Decision: Purchase")
             return "Purchase"
         else:
@@ -95,20 +120,19 @@ class CustomerAgent(mesa.Agent):
 
     def step(self):
         # Implement any customer behavior or interactions with the platform
-        pass
+        self.update_satisfaction_level()
 
 
 class ProductAgent(mesa.Agent):
-    def __init__(self, unique_id, model, price, quality, discount, keywords, brand):
+    def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
         # Product attributes
         self.retailer = None
-        self.price = price
-        self.quality = quality
-        self.discount = discount
-        # TODO：define keywords
-        self.keywords = keywords
-        self.brand = brand
+        self.price = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
+        self.quality = np.random.beta(5, 2)
+        self.discount = np.random.beta(2, 5)
+        self.keywords = initialize_keyword()
+        self.brand = initialize_brand()
         self.sales_count = 0
 
 

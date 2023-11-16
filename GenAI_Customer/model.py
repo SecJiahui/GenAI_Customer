@@ -46,14 +46,11 @@ class OnlinePlatformModel(mesa.Model):
         # Create products
         for i in range(self.num_products):
             unique_id = self.get_unique_id()
-            product = GenAI_Customer.agent.ProductAgent(unique_id, self, price=random.uniform(1, 5),
-                                                        quality=random.uniform(0, 1),
-                                                        discount=random.uniform(0, 0.5),
-                                                        keywords=["keyword1", "keyword2"],
-                                                        brand=["brand1"])
+            product = GenAI_Customer.agent.ProductAgent(unique_id, self)
 
             # Randomly select a retailer for the product
-            retailer = random.choice([agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.RetailerAgent)])
+            retailer = random.choice(
+                [agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.RetailerAgent)])
             product.retailer = retailer
             retailer.products.append(product)
 
@@ -96,33 +93,33 @@ class OnlinePlatformModel(mesa.Model):
         # Simulate customers purchasing products and providing feedback
         for customer_agent in self.schedule.agents:
             if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent):
-                # Iterate over all ProductAgent instances
+                products_purchased = 0  # track the amount of purchased products
+                #  Make a purchase decision for each product
                 for product_agent in self.schedule.agents:
                     if isinstance(product_agent, GenAI_Customer.agent.ProductAgent):
-                        # Make a purchase decision for each product
+                        print(f"Customer {customer_agent.unique_id} with satisfaction {customer_agent.satisfaction} is making ")
                         decision = customer_agent.make_purchase_decision(product_agent)
-                        customer_agent.update_satisfaction_level()
+                        print(f"Done")
 
-                        # Update satisfaction based on the purchase decision
                         if decision == "Purchase":
-                            customer_agent.satisfaction += 0.1
+                            products_purchased += 1
                             self.total_sales += product_agent.price
 
-                            # Check if the customer made a positive comment
                             if customer_agent.made_positive_comment():
-                                # Seller rating update based on successful purchase and positive comment
-                                product_agent.retailer.rating += 0.1
-                            else:
-                                # Seller rating update based on successful purchase but no comment
                                 product_agent.retailer.rating += 0.05
+                            else:
+                                product_agent.retailer.rating += 0.025
 
-                            break
+                # Update satisfaction based on the purchase decision
+                if products_purchased > 1:
+                    customer_agent.satisfaction += 0.05  # purchased more than one item
+                elif products_purchased == 1:
+                    customer_agent.satisfaction += 0.025  # purchased only one item
+                else:
+                    customer_agent.satisfaction -= 0.01  # none item was purchased
 
-                        else:
-                            customer_agent.satisfaction -= 0.1
-
-                        # Ensure satisfaction stays within the [0, 1] range
-                        customer_agent.satisfaction = max(0, min(1, customer_agent.satisfaction))
+                # Ensure satisfaction stays within the [0, 1] range
+                customer_agent.satisfaction = max(0, min(1, customer_agent.satisfaction))
 
         # G: E-commerce platform updates platform information
         # Implement logic to update platform information
@@ -135,9 +132,3 @@ class OnlinePlatformModel(mesa.Model):
 
         # collect data
         self.datacollector.collect(self)
-
-
-# Example usage:
-model = OnlinePlatformModel(num_customers=100, num_products=10, num_retailers=5)
-for i in range(10):
-    model.step()
