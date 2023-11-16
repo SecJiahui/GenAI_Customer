@@ -3,7 +3,7 @@ import random
 import mesa
 import networkx as nx
 
-from GenAI_Customer.agent import CustomerAgent, ProductAgent, RetailerAgent, GenerativeAI
+import GenAI_Customer.agent
 
 
 class OnlinePlatformModel(mesa.Model):
@@ -13,39 +13,57 @@ class OnlinePlatformModel(mesa.Model):
         self.num_customers = num_customers
         self.num_products = num_products
         self.num_retailers = num_retailers
+        self.total_sales = 0
+        # probe test net
+        prob = num_retailers / self.num_customers
+        self.G = nx.erdos_renyi_graph(n=self.num_customers, p=prob)
+        self.grid = mesa.space.NetworkGrid(self.G)
 
         self.schedule = mesa.time.RandomActivation(self)
+
+        self.datacollector = mesa.DataCollector(
+            {
+                "LowSatisfaction": GenAI_Customer.agent.number_LowSatisfaction,
+                "MediumSatisfaction": GenAI_Customer.agent.number_MediumSatisfaction,
+                "HighSatisfaction": GenAI_Customer.agent.number_HighSatisfaction,
+                "Sales": lambda model: model.total_sales,
+            }
+        )
 
         # Create customers
         for i in range(self.num_customers):
             unique_id = self.get_unique_id()
-            customer = CustomerAgent(unique_id, self)
+            customer = GenAI_Customer.agent.CustomerAgent(unique_id, self)
             self.schedule.add(customer)
+            self.grid.place_agent(customer, i)
 
         # Create retailers
         for i in range(self.num_retailers):
             unique_id = self.get_unique_id()
-            retailer = RetailerAgent(unique_id, self)
+            retailer = GenAI_Customer.agent.RetailerAgent(unique_id, self)
             self.schedule.add(retailer)
 
         # Create products
         for i in range(self.num_products):
             unique_id = self.get_unique_id()
-            product = ProductAgent(unique_id, self, price=random.uniform(1, 100),
-                                   quality=random.uniform(0, 1),
-                                   discount=random.uniform(0, 0.5),
-                                   keywords=["keyword1", "keyword2"],
-                                   brand=["brand1"])
+            product = GenAI_Customer.agent.ProductAgent(unique_id, self, price=random.uniform(1, 5),
+                                                        quality=random.uniform(0, 1),
+                                                        discount=random.uniform(0, 0.5),
+                                                        keywords=["keyword1", "keyword2"],
+                                                        brand=["brand1"])
 
             # Randomly select a retailer for the product
-            retailer = random.choice([agent for agent in self.schedule.agents if isinstance(agent, RetailerAgent)])
+            retailer = random.choice([agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.RetailerAgent)])
             product.retailer = retailer
             retailer.products.append(product)
 
             self.schedule.add(product)
 
         # Create Generative AI
-        self.generative_ai = GenerativeAI()
+        self.generative_ai = GenAI_Customer.agent.GenerativeAI()
+
+        self.running = True
+        self.datacollector.collect(self)
 
     def get_unique_id(self):
         # Generate a unique ID that has not been used before
@@ -54,6 +72,9 @@ class OnlinePlatformModel(mesa.Model):
             unique_id = self.random.randint(1, 1000000)  # Adjust the range as needed
         self.used_ids.add(unique_id)
         return unique_id
+
+    def get_total_sales(self):
+        return self.total_sales
 
     def step(self):
         # A: E-commerce platform updates sellers and product information
@@ -74,16 +95,19 @@ class OnlinePlatformModel(mesa.Model):
         # F: Customers purchase on e-commerce platforms and provide feedback
         # Simulate customers purchasing products and providing feedback
         for customer_agent in self.schedule.agents:
-            if isinstance(customer_agent, CustomerAgent):
+            if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent):
                 # Iterate over all ProductAgent instances
                 for product_agent in self.schedule.agents:
-                    if isinstance(product_agent, ProductAgent):
+                    if isinstance(product_agent, GenAI_Customer.agent.ProductAgent):
                         # Make a purchase decision for each product
                         decision = customer_agent.make_purchase_decision(product_agent)
+                        customer_agent.update_satisfaction_level()
 
                         # Update satisfaction based on the purchase decision
                         if decision == "Purchase":
                             customer_agent.satisfaction += 0.1
+                            self.total_sales += product_agent.price
+
                             # Check if the customer made a positive comment
                             if customer_agent.made_positive_comment():
                                 # Seller rating update based on successful purchase and positive comment
@@ -91,6 +115,9 @@ class OnlinePlatformModel(mesa.Model):
                             else:
                                 # Seller rating update based on successful purchase but no comment
                                 product_agent.retailer.rating += 0.05
+
+                            break
+
                         else:
                             customer_agent.satisfaction -= 0.1
 
@@ -105,6 +132,9 @@ class OnlinePlatformModel(mesa.Model):
 
         # Advance the model's time step
         self.schedule.step()
+
+        # collect data
+        self.datacollector.collect(self)
 
 
 # Example usage:
