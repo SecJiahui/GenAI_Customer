@@ -9,15 +9,14 @@ from GenAI_Customer.model import OnlinePlatformModel
 
 def customer_network_portrayal(G):
     def node_color(agent):
-        # Assuming the CustomerAgent has a 'state' attribute (replace 'state' with the actual attribute name)
         return {State.LowSatisfaction: "#FF0000", State.MediumSatisfaction: "#808080"}.get(
             agent.state, "#008000"
         )
 
     def edge_color(agent1, agent2):
         if State.HighSatisfaction in (agent1.state, agent2.state):
-            return "#e8e8e8"
-        return "#e8e8e8"
+            return "#FFFFFF"
+        return "#FFFFFF"
 
     def edge_width(agent1, agent2):
         if State.HighSatisfaction in (agent1.state, agent2.state):
@@ -67,11 +66,16 @@ chart_satisfaction = mesa.visualization.ChartModule(
 chart_sales = mesa.visualization.ChartModule(
     [{"Label": "Sales", "Color": "#0000FF"}],
 )
-# Add more chart modules as needed
+# Add average customer satisfaction
+chart_avg_satisfaction = mesa.visualization.ChartModule(
+    [{"Label": "Average Satisfaction", "Color": "#008000"}],
+    data_collector_name='datacollector'
+)
+
 
 model_params = {
-    "num_customers": mesa.visualization.Slider("Number of Customers", 10, 5, 30, 5, 1),
-    "num_products": mesa.visualization.Slider("Number of Products", 10, 5, 30, 5, 1),
+    "num_customers": mesa.visualization.Slider("Number of Customers", 30, 5, 60, 5, 1),
+    "num_products": mesa.visualization.Slider("Number of Products", 50, 20, 100, 10, 1),
     "num_retailers": mesa.visualization.Slider("Number of Retailers", 10, 5, 30, 2, 1),
     # Add more parameters as needed
 }
@@ -79,7 +83,7 @@ model_params = {
 # Create Mesa server
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
-    [network, chart_satisfaction, chart_sales],  # Add visualization modules
+    [network, chart_satisfaction,chart_avg_satisfaction, chart_sales],  # Add visualization modules
     #[network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,
