@@ -4,6 +4,8 @@ from enum import Enum
 
 import numpy as np
 
+import GenAI_Customer
+
 
 class State(Enum):
     LowSatisfaction = 0
@@ -53,18 +55,20 @@ def initialize_brand():
 
 
 class CustomerAgent(mesa.Agent):
-    def __init__(self, unique_id, model):
+    def __init__(self, unique_id, model, willing_to_share):
         super().__init__(unique_id, model)
         self.shopping_history = []
         self.shopping_amount = 0
         self.interests = initialize_interests()  # initialize interest
-        self.willing_to_share_info = random.random() < 0.3  # 30% customer agree to share their information
+        self.willing_to_share_info = willing_to_share  # customer agree to share their information
+        self.give_positive_comment = random.random() < 0.6
         self.satisfaction = random.uniform(0.3, 0.7)
         self.purchase_threshold = np.random.normal(0.5, 0.1)  # Normal distribution
         self.price_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.quality_sensitivity = np.random.beta(5, 2)  # Beta distribution, tends to lower quality sensitivity
         self.discount_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.brand_loyalty = np.random.beta(2, 2)  # Beta distribution, balanced brand loyalty
+        self.mean_purchase_position = None
         self.state = self.get_satisfaction_level()
 
     def get_satisfaction_level(self):
@@ -132,7 +136,7 @@ class CustomerAgent(mesa.Agent):
             return "Do Not Purchase"
 
 
-    def made_positive_comment(self):
+    def make_positive_comment(self):
         pass
 
     def step(self):
@@ -141,19 +145,20 @@ class CustomerAgent(mesa.Agent):
 
 
 class ProductAgent(mesa.Agent):
-    def __init__(self, unique_id, model):
+    def __init__(self, unique_id, model, price=None, quality=None, discount=None, keywords=None, brand=None):
         super().__init__(unique_id, model)
-        # Product attributes
-        self.retailer = None
-        self.price = 10 * np.random.beta(1, 1)  # Beta distribution, tends to higher price sensitivity
-        self.quality = np.random.beta(1, 1)
-        self.discount = np.random.beta(1, 1)
-        self.keywords = initialize_keyword()
-        self.brand = initialize_brand()
+        # Product attributes with options for custom initialization
+        self.seller = None
+        self.price = 10 * np.random.beta(1, 1) if price is None else price
+        self.quality = np.random.beta(1, 1) if quality is None else quality
+        self.discount = np.random.beta(1, 1) if discount is None else discount
+        self.keywords = initialize_keyword() if keywords is None else keywords
+        self.brand = initialize_brand() if brand is None else brand
         self.sales_count = 0
 
 
-class RetailerAgent(mesa.Agent):
+
+class SellerAgent(mesa.Agent):
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
         # Retailer attributes
@@ -168,9 +173,12 @@ class RetailerAgent(mesa.Agent):
 
 
 class GenerativeAI:
-    def __init__(self):
+    def __init__(self, model):
         # Initialize any necessary attributes
         self.customers_info = {}
+        self.learning_rate = 0.05
+        self.product_popularity = {}
+        self.model = model
 
     def receive_customer_info(self, customers_info, keywords):
         # Process received customer information and keywords
@@ -191,7 +199,7 @@ class GenerativeAI:
         recommendations = shuffled_agents
         return recommendations
 
-    def generate_personalized_recommendations(self, customer, products):
+    def generate_personalized_recommendations(self, model, customer, products):
         """Provide personalized recommendations based on customer sensitivities."""
         # Initialize a dictionary to store product scores
         product_scores = {}
@@ -206,6 +214,39 @@ class GenerativeAI:
             total_score = price_score + quality_score + discount_score
             product_scores[product] = total_score
 
+        # Find the product that gives the highest total_score for this customer
+        best_product = max(product_scores, key=product_scores.get)
+
+        # Extract the best attributes and modify slightly to create a new product
+        new_product_attributes = {
+            'price': max(best_product.price - 0.5, 0),
+            'quality': min(best_product.quality + 0.1, 1),
+            'discount': min(best_product.discount + 0.1, 1),
+            'keywords': customer.interests[0] if customer.interests else initialize_keyword(),
+            'brand': initialize_brand()
+        }
+
+        # Generate new product
+        new_product = self.generate_new_product(new_product_attributes)
+
+        # Randomly select a retailer for the new product
+        retailer = random.choice(
+            [agent for agent in self.model.schedule.agents if isinstance(agent, GenAI_Customer.agent.SellerAgent)])
+        new_product.seller = retailer
+        retailer.products.append(new_product)
+
+        # Add new product to products list
+        products.append(new_product)
+
+        # Add new product to products list of model agent
+        # model.schedule.add(new_product)
+
+        # Update scores with the new product
+        new_product_score = (1 - customer.price_sensitivity) * (1 - new_product.price / 10) \
+                            + customer.quality_sensitivity * new_product.quality \
+                            + customer.discount_sensitivity * new_product.discount
+        product_scores[new_product] = new_product_score
+
         # Sort products based on total score
         sorted_products = sorted(products, key=lambda p: product_scores[p], reverse=True)
 
@@ -215,10 +256,27 @@ class GenerativeAI:
         return recommendations
 
     def learn_from_customer_interactions(self, customers_feedback):
-        # TODO：define GenAI self learning
         # Learn from customer feedback and update algorithms
         for customer_id, feedback in customers_feedback.items():
             # Process and learn from feedback
             # For example, update product popularity based on feedback
             for product_id in feedback.get('purchased', []):
-                self.product_popularity[product_id] = self.product_popularity.get(product_id, 0) + 1
+                self.product_popularity[product_id] = self.product_popularity.get(product_id, 0) + self.learning_rate
+
+    def generate_new_product(self, best_attributes):
+        """
+        Generate a new product based on the best attributes for a customer.
+        """
+        new_product = ProductAgent(
+            unique_id=self.model.get_unique_id(),
+            model=self.model,
+            price=best_attributes['price'],
+            quality=best_attributes['quality'],
+            discount=best_attributes['discount'],
+            keywords=best_attributes['keywords']
+        )
+
+        print(new_product.unique_id)
+
+        # Set attributes for the new product based on customer data and trends
+        return new_product

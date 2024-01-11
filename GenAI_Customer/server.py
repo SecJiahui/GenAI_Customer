@@ -1,6 +1,3 @@
-import math
-import networkx as nx
-
 import mesa
 
 from GenAI_Customer.agent import State
@@ -12,6 +9,12 @@ def customer_network_portrayal(G):
         return {State.LowSatisfaction: "#FF0000", State.MediumSatisfaction: "#808080"}.get(
             agent.state, "#008000"
         )
+
+    def node_shape(agent):
+        return "rect" if not agent.willing_to_share_info else "circle"
+
+    def node_size(agent):
+        return 3 if not agent.willing_to_share_info else 6
 
     def edge_color(agent1, agent2):
         if State.HighSatisfaction in (agent1.state, agent2.state):
@@ -29,7 +32,8 @@ def customer_network_portrayal(G):
     portrayal = {}
     portrayal["nodes"] = [
         {
-            "size": 6,
+            "size": node_size(agents[0]),
+            "shape": node_shape(agents[0]),
             "color": node_color(agents[0]),
             "tooltip": f"id: {agents[0].unique_id}<br>state: {agents[0].state.name}",
         }
@@ -64,26 +68,59 @@ chart_satisfaction = mesa.visualization.ChartModule(
 )
 
 chart_sales = mesa.visualization.ChartModule(
-    [{"Label": "Sales", "Color": "#0000FF"}],
+    [
+        {"Label": "Sales", "Color": "#0000FF"},
+        {"Label": "Sales Willing", "Color": "#008000"},
+        {"Label": "Sales Unwilling", "Color": "#FF0000"},
+     ]
 )
 # Add average customer satisfaction
 chart_avg_satisfaction = mesa.visualization.ChartModule(
-    [{"Label": "Average Satisfaction", "Color": "#008000"}],
+    [
+        {"Label": "Average Satisfaction", "Color": "#808080"},
+        {"Label": "Avg Satisfaction (Willing)", "Color": "#008000"},
+        {"Label": "Avg Satisfaction (Unwilling)", "Color": "#FF0000"},
+    ],
+    data_collector_name='datacollector'
+)
+
+# Add average customer satisfaction
+chart_mean_purchase_position = mesa.visualization.ChartModule(
+    [
+        {"Label": "mean_purchase_position", "Color": "#808080"},
+        {"Label": "mean_purchase_position (Willing)", "Color": "#008000"},
+        {"Label": "mean_purchase_position (Unwilling)", "Color": "#FF0000"},
+    ],
+    data_collector_name='datacollector'
+)
+
+chart_sharing_preferences = mesa.visualization.ChartModule(
+    [
+        {"Label": "Willing to Share Customers", "Color": "green"},
+        {"Label": "Unwilling to Share Customers", "Color": "red"}
+    ],
+    data_collector_name='datacollector'
+)
+
+chart_number_products = mesa.visualization.ChartModule(
+    [
+        {"Label": "Number of Products", "Color": "blue"},
+    ],
     data_collector_name='datacollector'
 )
 
 
 model_params = {
-    "num_customers": mesa.visualization.Slider("Number of Customers", 30, 5, 60, 5, 1),
+    "num_customers": mesa.visualization.Slider("Number of Customers", 100, 20, 200, 5, 1),
+    "num_customers_willing_to_share_info": mesa.visualization.Slider("Number of Customer willing to share Info", 50, 0,200, 5, 1),
     "num_products": mesa.visualization.Slider("Number of Products", 50, 20, 100, 10, 1),
-    "num_retailers": mesa.visualization.Slider("Number of Retailers", 10, 5, 30, 2, 1),
-    # Add more parameters as needed
+    "num_retailers": mesa.visualization.Slider("Number of Retailers", 15, 5, 30, 2, 1),
 }
 
 # Create Mesa server
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
-    [network, chart_satisfaction,chart_avg_satisfaction, chart_sales],  # Add visualization modules
+    [network, chart_sharing_preferences, chart_number_products, chart_satisfaction,chart_avg_satisfaction, chart_mean_purchase_position, chart_sales],  # Add visualization modules
     #[network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,
