@@ -16,15 +16,19 @@ def customer_network_portrayal(G):
     def node_size(agent):
         return 3 if not agent.willing_to_share_info else 6
 
-    def edge_color(agent1, agent2):
-        if State.HighSatisfaction in (agent1.state, agent2.state):
-            return "#FFFFFF"
+    def edge_color(source, target):
+        """for target_agent_id, rating in source.review_history:
+            if target_agent_id == target.unique_id:
+                if rating >= 4:
+                    return "#006400"  # green states for positive comments
+                elif rating <= 1:
+                    return "#8B0000"  # red states for negative comments"""
         return "#FFFFFF"
 
     def edge_width(agent1, agent2):
         if State.HighSatisfaction in (agent1.state, agent2.state):
             return 3
-        return 2
+        return 0.2
 
     def get_agents(source, target):
         return G.nodes[source]["agent"][0], G.nodes[target]["agent"][0]
@@ -70,16 +74,32 @@ chart_satisfaction = mesa.visualization.ChartModule(
 chart_sales = mesa.visualization.ChartModule(
     [
         {"Label": "Sales", "Color": "#0000FF"},
-        {"Label": "Sales Willing", "Color": "#008000"},
-        {"Label": "Sales Unwilling", "Color": "#FF0000"},
-     ]
+        {"Label": "Sales (Willing)", "Color": "#008000"},
+        {"Label": "Sales (Unwilling)", "Color": "#FF0000"},
+    ]
 )
+
+chart_num_sold_products = mesa.visualization.ChartModule(
+    [
+        {"Label": "Sold Products", "Color": "#0000FF"},
+        {"Label": "Sold Products (Willing)", "Color": "#008000"},
+        {"Label": "Sold Products (Unwilling)", "Color": "#FF0000"},
+    ]
+)
+
 # Add average customer satisfaction
 chart_avg_satisfaction = mesa.visualization.ChartModule(
     [
         {"Label": "Average Satisfaction", "Color": "#808080"},
         {"Label": "Avg Satisfaction (Willing)", "Color": "#008000"},
         {"Label": "Avg Satisfaction (Unwilling)", "Color": "#FF0000"},
+    ],
+    data_collector_name='datacollector'
+)
+
+chart_avg_rating = mesa.visualization.ChartModule(
+    [
+        {"Label": "Average Seller Rating", "Color": "#808080"},
     ],
     data_collector_name='datacollector'
 )
@@ -109,19 +129,29 @@ chart_number_products = mesa.visualization.ChartModule(
     data_collector_name='datacollector'
 )
 
+chart_AIC = mesa.visualization.ChartModule(
+    [
+        {"Label": "AIC Linear", "Color": "blue"},
+        {"Label": "AIC Quadratic", "Color": "red"},
+        # {"Label": "AIC Hierarchical", "Color": "green"},
+    ],
+    data_collector_name='datacollector'
+)
 
 model_params = {
     "num_customers": mesa.visualization.Slider("Number of Customers", 100, 20, 200, 5, 1),
-    "num_customers_willing_to_share_info": mesa.visualization.Slider("Number of Customer willing to share Info", 50, 0,200, 5, 1),
-    "num_products": mesa.visualization.Slider("Number of Products", 50, 20, 100, 10, 1),
+    "num_customers_willing_to_share_info": mesa.visualization.Slider("Number of Customer willing to share Info", 50, 0,
+                                                                     200, 5, 1),
+    "num_products": mesa.visualization.Slider("Number of Products", 100, 30, 150, 10, 1),
     "num_retailers": mesa.visualization.Slider("Number of Retailers", 15, 5, 30, 2, 1),
 }
 
 # Create Mesa server
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
-    [network, chart_sharing_preferences, chart_number_products, chart_satisfaction,chart_avg_satisfaction, chart_mean_purchase_position, chart_sales],  # Add visualization modules
-    #[network, chart_sales],  # Add visualization modules
+    [network, chart_satisfaction, chart_avg_satisfaction, chart_avg_rating,
+     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC],  # Add visualization modules
+    # [network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,
 )
