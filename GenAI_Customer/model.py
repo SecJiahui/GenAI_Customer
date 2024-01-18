@@ -404,9 +404,12 @@ class OnlinePlatformModel(mesa.Model):
 
     def calculate_linear_aic(self, willing_to_share=None):
         """
-        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
+        Calculate the AIC for a customer satisfaction model based on product attributes using a linear model.
 
         AIC = -2 ln(L) + 2k
+
+        Parameters:
+        willing_to_share: Boolean indicating whether to include only customers who are willing to share their info or not.
 
         Returns:
         AIC value
