@@ -353,7 +353,7 @@ class OnlinePlatformModel(mesa.Model):
                 decision_info = {
                     "step": self.step_counter,
                     "customer_id": customer.unique_id,
-                    "willing_to_share_info": customer.willing_to_share_info,
+                    "willing_to_share_info": int(customer.willing_to_share_info),
                     "satisfaction": customer.satisfaction,
                     'purchase_decision': decision['purchase_decision'],
                     'decision_factor': decision['decision_factor'],
@@ -382,7 +382,7 @@ class OnlinePlatformModel(mesa.Model):
                     update_seller_ratings_based_on_purchase(product, index)
 
                 # if not decision['purchase_decision'] and product.unique_id == 1008610086:
-                 #    self.generative_ai.learning_rate -= 0.001
+                #    self.generative_ai.learning_rate -= 0.001
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
@@ -449,6 +449,105 @@ class OnlinePlatformModel(mesa.Model):
             return None
 
         X = sm.add_constant(df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']])
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        if willing_to_share is None:
+            print(model.summary())
+
+        return model.aic
+
+    def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
+        """
+        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
+
+        AIC = -2 ln(L) + 2k
+
+        Returns:
+        AIC value
+        """
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'willing_to_share': [],
+            'customer_id': []
+        }
+
+        if willing_to_share is None:
+            customers = self.get_customer_agents()
+        else:
+            customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                willing_to_share_info = int(customer.willing_to_share_info)
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['willing_to_share'].append(willing_to_share_info)
+                data['satisfaction'].append(satisfaction)
+                data['customer_id'].append(customer.unique_id)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            print("No data available for AIC calculation.")
+            return None
+
+        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        for degree in range(2, max_degree + 1):
+            X = np.column_stack((X, df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']] ** degree))
+
+        X = sm.add_constant(X)
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        """if willing_to_share is None and max_degree == 4:
+            print(model.summary())"""
+
+        return model.aic
+
+    def calculate_linear_aic_test(self, willing_to_share=None):
+        """
+        Calculate the AIC for a customer satisfaction model based on product attributes using a linear model.
+
+        AIC = -2 ln(L) + 2k
+
+        Parameters:
+        willing_to_share: Boolean indicating whether to include only customers who are willing to share their info or not.
+
+        Returns:
+        AIC value
+        """
+        # Initialize lists to store filtered data
+        filtered_data = {
+            'price': [],
+            'quality': [],
+            'content': [],
+            'satisfaction': [],
+            'willing_to_share_info': []
+        }
+
+        # Filter the purchase decisions based on the willingness to share info
+        for decision in self.purchase_decisions:
+            if willing_to_share is None or decision['willing_to_share_info'] == willing_to_share:
+                filtered_data['price'].append(decision['product_price'])
+                filtered_data['quality'].append(decision['product_quality'])
+                filtered_data['content'].append(decision['product_content'])
+                filtered_data['satisfaction'].append(decision['satisfaction'])
+                filtered_data['willing_to_share_info'].append(decision['willing_to_share_info'])
+
+        df = pd.DataFrame(filtered_data)
+
+        if df.empty:
+            return None
+
+        X = sm.add_constant(df[['price', 'quality', 'content', 'willing_to_share_info']])
         model = sm.OLS(df['satisfaction'], X).fit()
 
         if willing_to_share is None:
@@ -586,53 +685,45 @@ class OnlinePlatformModel(mesa.Model):
         # Return the AIC value
         return model.aic
 
-    def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
+    def calculate_polynomial_aic_test(self, max_degree, willing_to_share=None):
         """
-        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
+        Calculate the AIC for a customer satisfaction model based on product attributes using a linear model.
 
         AIC = -2 ln(L) + 2k
+
+        Parameters:
+        willing_to_share: Boolean indicating whether to include only customers who are willing to share their info or not.
 
         Returns:
         AIC value
         """
-        data = {
-            'avg_price': [],
-            'avg_quality': [],
-            'avg_content': [],
+        # Initialize lists to store filtered data
+        filtered_data = {
+            'price': [],
+            'quality': [],
+            'content': [],
             'satisfaction': [],
-            'willing_to_share': [],
-            'customer_id': []
+            'willing_to_share_info': []
         }
 
-        if willing_to_share is None:
-            customers = self.get_customer_agents()
-        else:
-            customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+        # Filter the purchase decisions based on the willingness to share info
+        for decision in self.purchase_decisions:
+            if willing_to_share is None or decision['willing_to_share_info'] == willing_to_share:
+                filtered_data['price'].append(decision['product_price'])
+                filtered_data['quality'].append(decision['product_quality'])
+                filtered_data['content'].append(decision['product_content'])
+                filtered_data['satisfaction'].append(decision['satisfaction'])
+                filtered_data['willing_to_share_info'].append(decision['willing_to_share_info'])
 
-        for customer in customers:
-            if customer.shopping_history:
-                avg_price = np.mean([product.price for product in customer.shopping_history])
-                avg_quality = np.mean([product.quality for product in customer.shopping_history])
-                avg_content = np.mean([product.content_score for product in customer.shopping_history])
-                willing_to_share_info = int(customer.willing_to_share_info)
-                satisfaction = customer.satisfaction
-
-                data['avg_price'].append(avg_price)
-                data['avg_quality'].append(avg_quality)
-                data['avg_content'].append(avg_content)
-                data['willing_to_share'].append(willing_to_share_info)
-                data['satisfaction'].append(satisfaction)
-                data['customer_id'].append(customer.unique_id)
-
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(filtered_data)
 
         if df.empty:
             print("No data available for AIC calculation.")
             return None
-
-        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        # Create polynomial features
+        X = df[['price', 'quality', 'content', 'willing_to_share_info']]
         for degree in range(2, max_degree + 1):
-            X = np.column_stack((X, df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']] ** degree))
+            X = np.column_stack((X, df[['price', 'quality', 'content', 'willing_to_share_info']] ** degree))
 
         X = sm.add_constant(X)
         model = sm.OLS(df['satisfaction'], X).fit()
