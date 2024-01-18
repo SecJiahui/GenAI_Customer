@@ -63,14 +63,12 @@ class CustomerAgent(mesa.Agent):
         self.interests = initialize_interests()  # initialize interest
         self.willing_to_share_info = willing_to_share  # customer agree to share their information
         self.satisfaction = random.uniform(0.3, 0.7)
-        self.purchase_threshold = np.random.normal(0.5, 0.1)  # Normal distribution
         self.price_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.quality_sensitivity = np.random.beta(5, 2)  # Beta distribution, tends to lower quality sensitivity
         self.content_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.brand_loyalty = np.random.beta(2, 2)  # Beta distribution, balanced brand loyalty
         self.mean_purchase_position = None
         self.state = self.get_satisfaction_level()
-        self.model = model
 
     def get_satisfaction_level(self):
         if self.satisfaction >= 0.8:
@@ -182,10 +180,16 @@ class CustomerAgent(mesa.Agent):
             product.sales_count += 1
             self.shopping_history.append(product)
             print(f"Purchase Decision: True")
-            return "Purchase"
         else:
             print(f"Purchase Decision: False")
-            return "Do Not Purchase"
+
+        decision_info = {
+            'purchase_decision': purchase_decision,
+            'decision_factor': decision_factor,
+            'generative_ai_learning_rate': generative_ai_learning_rate
+        }
+
+        return decision_info
 
     def make_comment(self, product):
         """

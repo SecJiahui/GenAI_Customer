@@ -1,2 +1,7 @@
 networkx>=2.0
 mesa~=2.0
+solara~=1.22.0
+matplotlib~=3.8.1
+numpy~=1.26.1
+pandas~=2.1.2
+statsmodels~=0.14.1

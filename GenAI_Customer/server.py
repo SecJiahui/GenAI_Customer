@@ -129,10 +129,34 @@ chart_number_products = mesa.visualization.ChartModule(
     data_collector_name='datacollector'
 )
 
-chart_AIC = mesa.visualization.ChartModule(
+chart_AIC_willing = mesa.visualization.ChartModule(
     [
-        {"Label": "AIC Linear", "Color": "blue"},
-        {"Label": "AIC Quadratic", "Color": "red"},
+        {"Label": "AIC Linear (Willing)", "Color": "blue"},
+        {"Label": "AIC Quadratic (Willing)", "Color": "red"},
+        {"Label": "AIC Cubic (Willing)", "Color": "green"},
+        {"Label": "AIC Quartic (Willing)", "Color": "yellow"},
+        # {"Label": "AIC Hierarchical", "Color": "green"},
+    ],
+    data_collector_name='datacollector'
+)
+
+chart_AIC_unwilling = mesa.visualization.ChartModule(
+    [
+        {"Label": "AIC Linear (Unwilling)", "Color": "blue"},
+        {"Label": "AIC Quadratic (Unwilling)", "Color": "red"},
+        {"Label": "AIC Cubic (Unwilling)", "Color": "green"},
+        {"Label": "AIC Quartic (Unwilling)", "Color": "yellow"},
+        # {"Label": "AIC Hierarchical", "Color": "green"},
+    ],
+    data_collector_name='datacollector'
+)
+
+chart_AIC_sum = mesa.visualization.ChartModule(
+    [
+        {"Label": "AIC Linear (Sum)", "Color": "blue"},
+        {"Label": "AIC Quadratic (Sum)", "Color": "red"},
+        {"Label": "AIC Cubic (Sum)", "Color": "green"},
+        {"Label": "AIC Quartic (Sum)", "Color": "yellow"},
         # {"Label": "AIC Hierarchical", "Color": "green"},
     ],
     data_collector_name='datacollector'
@@ -150,7 +174,7 @@ model_params = {
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
     [network, chart_satisfaction, chart_avg_satisfaction, chart_avg_rating,
-     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC],  # Add visualization modules
+     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC_sum, chart_AIC_willing, chart_AIC_unwilling],  # Add visualization modules
     # [network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,

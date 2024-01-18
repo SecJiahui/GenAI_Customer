@@ -108,25 +108,11 @@ def update_seller_ratings_based_on_product(product_agent):
     product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
 
 
-def collect_keywords():
-    # Implement logic to collect keywords (placeholder)
-    return []
-
-
-def get_product_by_id(product_id):
-    # Implement logic to get product by ID (placeholder)
-    return None
-
-
-def collect_customer_feedback():
-    # Implement logic to collect customer feedback (placeholder)
-    return {}
-
-
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, num_products, num_retailers, num_customers_willing_to_share_info):
         super().__init__()
         self.step_counter = 0
+        self.total_steps = 50
         self.used_ids = set()  # Track used IDs
         self.num_customers = num_customers
         self.num_products = num_products
@@ -143,6 +129,8 @@ class OnlinePlatformModel(mesa.Model):
         self.grid = mesa.space.NetworkGrid(self.G)
 
         self.schedule = mesa.time.RandomActivation(self)
+
+        self.purchase_decisions = []
 
         self.datacollector = mesa.DataCollector(
             {
@@ -165,8 +153,21 @@ class OnlinePlatformModel(mesa.Model):
                 "mean_purchase_position": self.mean_purchase_position,
                 "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
                 "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
-                "AIC Linear": self.calculate_linear_aic,
-                "AIC Quadratic":self.calculate_quadratic_aic,
+                "AIC Linear (Sum)": lambda model: self.calculate_linear_aic(),
+                "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
+                "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
+                "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
+                "AIC Linear (Willing)": lambda model: self.calculate_linear_aic(True),
+                "AIC Quadratic (Willing)": lambda model: self.calculate_polynomial_aic(2, True),
+                "AIC Cubic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
+                "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
+                "AIC Linear (Unwilling)": lambda model: self.calculate_linear_aic(False),
+                "AIC Quadratic (Unwilling)": lambda model: self.calculate_polynomial_aic(2, False),
+                "AIC Cubic (Unwilling)": lambda model: self.calculate_polynomial_aic(3, False),
+                "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
+                # "AIC Quadratic": self.calculate_quadratic_aic,
+                # "AIC Cubic": self.calculate_cubic_aic,
+                # "AIC Quartic": self.calculate_quartic_aic,
                 # "AIC Hierarchical":self.calculate_hierarchical_aic,
             }
         )
@@ -344,12 +345,29 @@ class OnlinePlatformModel(mesa.Model):
 
             for index, product in enumerate(products_to_consider[:num_products_to_consider]):
                 print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
-                decision = customer.make_purchase_decision(product, customer.willing_to_share_info, self.generative_ai.learning_rate)
+                decision = customer.make_purchase_decision(product, customer.willing_to_share_info,
+                                                           self.generative_ai.learning_rate)
                 customer.make_comment(product)
 
-                if decision == "Purchase":
-                    if product.unique_id == 1008610086:
-                        self.generative_ai.learning_rate += 0.01
+                # Collect purchase decision data
+                decision_info = {
+                    "step": self.step_counter,
+                    "customer_id": customer.unique_id,
+                    "willing_to_share_info": customer.willing_to_share_info,
+                    "satisfaction": customer.satisfaction,
+                    'purchase_decision': decision['purchase_decision'],
+                    'decision_factor': decision['decision_factor'],
+                    'generative_ai_learning_rate': decision['generative_ai_learning_rate'],
+                    "product_id": product.unique_id,
+                    "product_price": product.price,
+                    "product_quality": product.quality,
+                    "product_content": product.content_score
+                }
+                self.purchase_decisions.append(decision_info)
+
+                if decision['purchase_decision']:
+                    # if product.unique_id == 1008610086:
+                    #     self.generative_ai.learning_rate += 0.001
 
                     products_purchased += 1
                     total_purchase_position += index
@@ -363,8 +381,8 @@ class OnlinePlatformModel(mesa.Model):
                         self.num_sold_products_unwilling += 1
                     update_seller_ratings_based_on_purchase(product, index)
 
-                if decision == "Do Not Purchase" and product.unique_id == 1008610086:
-                    self.generative_ai.learning_rate -= 0.01
+                # if not decision['purchase_decision'] and product.unique_id == 1008610086:
+                 #    self.generative_ai.learning_rate -= 0.001
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
@@ -375,91 +393,70 @@ class OnlinePlatformModel(mesa.Model):
             # Update customer satisfaction
             update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position)
 
-    def calculate_linear_aic(self):
+    def export_purchase_decisions_to_csv(self, filename):
+        """Exports purchase decision data to a CSV file."""
+        df = pd.DataFrame(self.purchase_decisions)
+        df.to_csv(filename, index=False)
+
+    def export_data_if_final_step(self):
+        if self.step_counter == self.total_steps:
+            self.export_purchase_decisions_to_csv("purchase_decisions.csv")
+
+    def calculate_linear_aic(self, willing_to_share=None):
         """
-        Calculate the AIC for a customer satisfaction model based on product attributes.
-        Assumes that each customer has a 'satisfaction' attribute and a shopping history of products.
+        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
 
         AIC = -2 ln(L) + 2k
-
-        Parameters:
-        customers - List of CustomerAgent instances
 
         Returns:
         AIC value
         """
 
-        # Initialize lists to store data
-        prices = []
-        qualities = []
-        contents = []
-        satisfactions = []
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'willing_to_share': [],
+            'satisfaction': []
+        }
+        if willing_to_share is None:
+            customers = self.get_customer_agents()
+        else:
+            customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
 
-        customers = self.get_customer_agents()
-
-        # Loop through each customer and their purchased products
         for customer in customers:
-            for product in customer.shopping_history:
-                # Append product attributes and customer satisfaction to the lists
-                prices.append(product.price)
-                qualities.append(product.quality)
-                contents.append(product.content_score)
-                satisfactions.append(customer.satisfaction)
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                satisfaction = customer.satisfaction
+                willing_to_share_info = int(customer.willing_to_share_info)
 
-        # Convert lists to numpy arrays
-        price = np.array(prices)
-        quality = np.array(qualities)
-        content = np.array(contents)
-        satisfaction = np.array(satisfactions)
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['willing_to_share'].append(willing_to_share_info)
+                data['satisfaction'].append(satisfaction)
 
-        # Check if arrays are not empty
-        if len(price) == 0 or len(quality) == 0 or len(content) == 0 or len(satisfaction) == 0:
+        df = pd.DataFrame(data)
+
+        for col in ['avg_price', 'avg_quality', 'avg_content']:
+            min_val = df[col].min()
+            max_val = df[col].max()
+            df[col] = (df[col] - min_val) / (max_val - min_val)
+
+        if df.empty:
             return None
 
-        # Create the matrix of independent variables
-        X = np.column_stack((price, quality, content))
+        X = sm.add_constant(df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']])
+        model = sm.OLS(df['satisfaction'], X).fit()
 
-        # Add a constant term for the intercept
-        X = sm.add_constant(X)
+        if willing_to_share is None:
+            print(model.summary())
 
-        # Fit the linear regression model
-        model = sm.OLS(satisfaction, X).fit()
-
-        # Return the AIC value
         return model.aic
 
-    """    def calculate_hierarchical_aic(self):
-            data = {
-                'price': [],
-                'quality': [],
-                'content': [],
-                'satisfaction': [],
-                'customer_id': []
-            }
-
-            customers = self.get_customer_agents()
-
-            for customer in customers:
-                for product in customer.shopping_history:
-                    data['price'].append(product.price)
-                    data['quality'].append(product.quality)
-                    data['content'].append(product.content_score)
-                    data['satisfaction'].append(customer.satisfaction)
-                    data['customer_id'].append(customer.unique_id)
-
-            df = pd.DataFrame(data)
-
-            if len(data['price']) == 0 or len(data['quality']) == 0 or len(data['content']) == 0 or len(
-                    data['satisfaction']) == 0:
-                print("No data available for AIC calculation.")
-                return None
-
-            model = smf.mixedlm("satisfaction ~ price + quality + content", df, groups=df["customer_id"])
-            model_fit = model.fit()
-
-            return model_fit.aic"""
-
-    def calculate_quadratic_aic(self):
+    def calculate_quadratic_aic(self, willing_to_share):
         """
         Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
 
@@ -470,43 +467,215 @@ class OnlinePlatformModel(mesa.Model):
         """
 
         # Initialize lists to store data
-        prices = []
-        qualities = []
-        contents = []
-        satisfactions = []
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': []
+        }
 
-        customers = self.get_customer_agents()
+        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
 
-        # Loop through each customer and their purchased products
         for customer in customers:
-            for product in customer.shopping_history:
-                # Append product attributes and customer satisfaction to the lists
-                prices.append(product.price)
-                qualities.append(product.quality)
-                contents.append(product.content_score)
-                satisfactions.append(customer.satisfaction)
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                satisfaction = customer.satisfaction
 
-        # Convert lists to numpy arrays
-        price = np.array(prices)
-        quality = np.array(qualities)
-        content = np.array(contents)
-        satisfaction = np.array(satisfactions)
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['satisfaction'].append(satisfaction)
 
-        # Check if arrays are not empty
-        if len(price) == 0 or len(quality) == 0 or len(content) == 0 or len(satisfaction) == 0:
+        df = pd.DataFrame(data)
+
+        if df.empty:
             return None
 
         # Create the matrix of independent variables with quadratic terms
-        X = np.column_stack((price, quality, content, price ** 2, quality ** 2, content ** 2))
-
-        # Add a constant term for the intercept
+        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        X = np.column_stack((X, X ** 2))
         X = sm.add_constant(X)
 
         # Fit the quadratic regression model
-        model = sm.OLS(satisfaction, X).fit()
+        model = sm.OLS(df['satisfaction'], X).fit()
 
         # Return the AIC value
         return model.aic
+
+    def calculate_cubic_aic(self, willing_to_share):
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'customer_id': []
+        }
+
+        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['satisfaction'].append(satisfaction)
+                data['customer_id'].append(customer.unique_id)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            print("No data available for AIC calculation.")
+            return None
+
+        # Create the matrix of independent variables with cubic terms
+        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        X = np.column_stack((X, X ** 2, X ** 3))
+        X = sm.add_constant(X)
+
+        # Fit the cubic regression model
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        # Return the AIC value
+        return model.aic
+
+    def calculate_quartic_aic(self, willing_to_share):
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'customer_id': []
+        }
+
+        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['satisfaction'].append(satisfaction)
+                data['customer_id'].append(customer.unique_id)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            print("No data available for AIC calculation.")
+            return None
+
+        # Create the matrix of independent variables with quartic terms
+        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        X = np.column_stack((X, X ** 2, X ** 3, X ** 4))
+        X = sm.add_constant(X)
+
+        # Fit the quartic regression model
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        # Return the AIC value
+        return model.aic
+
+    def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
+        """
+        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
+
+        AIC = -2 ln(L) + 2k
+
+        Returns:
+        AIC value
+        """
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'willing_to_share': [],
+            'customer_id': []
+        }
+
+        if willing_to_share is None:
+            customers = self.get_customer_agents()
+        else:
+            customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                willing_to_share_info = int(customer.willing_to_share_info)
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['willing_to_share'].append(willing_to_share_info)
+                data['satisfaction'].append(satisfaction)
+                data['customer_id'].append(customer.unique_id)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            print("No data available for AIC calculation.")
+            return None
+
+        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        for degree in range(2, max_degree + 1):
+            X = np.column_stack((X, df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']] ** degree))
+
+        X = sm.add_constant(X)
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        """if willing_to_share is None and max_degree == 4:
+            print(model.summary())"""
+
+        return model.aic
+
+    def calculate_hierarchical_aic(self, willing_to_share):
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'customer_id': []
+        }
+
+        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['satisfaction'].append(satisfaction)
+                data['customer_id'].append(customer.unique_id)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            print("No data available for AIC calculation.")
+            return None
+
+        model = smf.mixedlm("satisfaction ~ avg_price + avg_quality + avg_content", df, groups=df["customer_id"])
+        model_fit = model.fit()
+
+        return model_fit.aic
 
     def step(self):
         # Increment step counter
@@ -536,12 +705,10 @@ class OnlinePlatformModel(mesa.Model):
 
         # H: Generative AI learns from customer interactions, updating algorithms to improve future recommendations (done)
 
-        # Calculate AIC
-        aic = self.calculate_linear_aic()
-        print("AIC:", aic)
-
         # Advance the model's time step
         self.schedule.step()
 
         # collect data
         self.datacollector.collect(self)
+
+        self.export_data_if_final_step()
