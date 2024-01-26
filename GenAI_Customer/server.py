@@ -164,10 +164,12 @@ chart_AIC_sum = mesa.visualization.ChartModule(
 
 model_params = {
     "num_customers": mesa.visualization.Slider("Number of Customers", 100, 20, 200, 5, 1),
-    "num_customers_willing_to_share_info": mesa.visualization.Slider("Number of Customer willing to share Info", 50, 0,
-                                                                     200, 5, 1),
+    "percentage_willing_to_share_info": mesa.visualization.Slider("Percentage of Customer willing to share Info", 0.5, 0.1, 1.0, 0.1, 1),
     "num_products": mesa.visualization.Slider("Number of Products", 100, 30, 150, 10, 1),
     "num_retailers": mesa.visualization.Slider("Number of Retailers", 15, 5, 30, 2, 1),
+    "learning_rate_gen_ai": mesa.visualization.Slider("Learning Rate of Gen AI", 0.3, 0.1, 0.9, 0.1, 1),
+    "learning_rate_customer": mesa.visualization.Slider("Learning Rate of Customer", 0.3, 0.1, 0.9, 0.1, 1),
+    "capacity_gen_ai": mesa.visualization.Slider("Capacity of Gen AI", 60, 10, 100, 10, 1),
 }
 
 # Create Mesa server

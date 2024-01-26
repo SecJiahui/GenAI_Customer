@@ -130,21 +130,21 @@ class CustomerAgent(mesa.Agent):
         decision_factor = price_factor + quality_factor + content_factor
 
         # print Decision Factors information
-        print(
+        """print(
             f'Decision Factors for product: {product.unique_id}, '
             f'with Price Factor: {price_factor}, Quality Factor: {quality_factor}，Content Factor: {content_factor}'
-        )
+        )"""
 
         # Increase decision factor if product keywords match customer interests
         for interest in self.interests:
             if interest in product_keywords:
-                print(f"Customer is interested in this product")
+                # print(f"Customer is interested in this product")
                 decision_factor += 0.1
 
         # Increase decision factor if product brand matches customer shopping list
         if brand in self.shopping_history:
             decision_factor += (0.1 * self.brand_loyalty)
-            print(f"Brand: {brand} has been purchased before.")
+            # print(f"Brand: {brand} has been purchased before.")
 
         # Retrieve and process comments for the product
         product_comments = list(product.customers_comment.items())
@@ -169,7 +169,7 @@ class CustomerAgent(mesa.Agent):
             # Record the interaction for visualization
             self.review_history.append((customer_id, comment))
 
-        print(f"Total: {decision_factor}")
+        # print(f"Total: {decision_factor}")
 
         # Make a purchase decision based on decision factor and threshold
         purchase_threshold = 1.55
@@ -179,9 +179,9 @@ class CustomerAgent(mesa.Agent):
         if purchase_decision:
             product.sales_count += 1
             self.shopping_history.append(product)
-            print(f"Purchase Decision: True")
-        else:
-            print(f"Purchase Decision: False")
+            # print(f"Purchase Decision: True")
+        """else:
+            print(f"Purchase Decision: False")"""
 
         decision_info = {
             'purchase_decision': purchase_decision,
@@ -207,7 +207,7 @@ class CustomerAgent(mesa.Agent):
 
         product.customers_comment[self.unique_id] = rating
 
-        print(f"Customer {self.unique_id} rated product {product.unique_id} with a rating of {rating}")
+        # print(f"Customer {self.unique_id} rated product {product.unique_id} with a rating of {rating}")
 
     def step(self):
         # Implement any customer behavior or interactions with the platform
@@ -221,7 +221,7 @@ class ProductAgent(mesa.Agent):
         self.seller = None
         self.price = 10 * np.random.beta(1, 1) if price is None else price
         self.quality = np.random.beta(1, 1) if quality is None else quality
-        self.content_score = np.random.beta(7, 4) if content is None else content
+        self.content_score = np.random.beta(4, 7) if content is None else content
         self.keywords = initialize_keyword() if keywords is None else keywords
         self.brand = initialize_brand() if brand is None else brand
         self.customers_comment = {}
@@ -241,12 +241,13 @@ class SellerAgent(mesa.Agent):
 
 
 class GenerativeAI:
-    def __init__(self, model):
+    def __init__(self, model, learning_rate=None, capacity_gen_ai=0.5):
         # Initialize any necessary attributes
         self.customers_info = {}
-        self.learning_rate = 0.1
+        self.learning_rate = learning_rate
         self.product_popularity = {}
         self.model = model
+        self.capacity_gen_ai = capacity_gen_ai
 
     def generate_basic_recommendations(self, product_agents):
         """
@@ -278,7 +279,7 @@ class GenerativeAI:
             # Increase decision factor if product keywords match customer interests
             for interest in customer.interests:
                 if interest in product_keywords:
-                    print(f"Customer is interested in this product")
+                    # print(f"Customer is interested in this product")
                     total_score += 0.1
             """
             # Increase decision factor if product brand matches customer shopping list
@@ -322,8 +323,8 @@ class GenerativeAI:
                             + customer.content_sensitivity * new_product.content_score
         product_scores[new_product] = new_product_score
 
-        # Sort 20% products based on total score
-        num_products_to_sort = int(len(products) * 0.5)
+        # Sort products based on capacity
+        num_products_to_sort = int(len(products) * self.capacity_gen_ai)
         top_products = sorted(products[:num_products_to_sort], key=lambda p: product_scores[p], reverse=True)
         sorted_products = top_products + products[num_products_to_sort:]
 

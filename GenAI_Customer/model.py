@@ -1,3 +1,6 @@
+from tqdm import tqdm
+import itertools
+import os
 import random
 import mesa
 import networkx as nx
@@ -8,122 +11,27 @@ import statsmodels.formula.api as smf
 import GenAI_Customer.agent
 
 
-def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product):
-    """
-    Update the customer's satisfaction based on the number of products purchased and the average order of purchased products.
-
-    The satisfaction level is adjusted upwards if the customer purchases more than one product or if the average order
-    of the purchased products is low, indicating quick and efficient service. Conversely, the satisfaction decreases
-    if no products are purchased or if the average order is high, indicating slow service.
-
-    Parameters:
-    customer_agent - The CustomerAgent instance.
-    products_purchased - The number of products purchased by the customer.
-    average_order_of_purchased_product - The average order position of the purchased products.
-
-    The customer's satisfaction is bounded between 0 and 1.
-    """
-    # Update the customer's satisfaction based on the number of products purchased
-    if products_purchased > 5:
-        customer_agent.satisfaction += 0.08
-    elif products_purchased > 3:
-        customer_agent.satisfaction += 0.05
-    elif products_purchased == 1:
-        customer_agent.satisfaction += 0.03
-    else:
-        customer_agent.satisfaction -= 0.1
-
-    # Additional logic based on average order of purchased products
-    if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= 20:
-            # Positive feedback for lower average order values
-            customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= 40:
-            # Positive feedback for lower average order values
-            customer_agent.satisfaction += 0.05
-        else:
-            # Negative feedback for higher average order values
-            customer_agent.satisfaction -= 0.03
-
-    customer_agent.satisfaction = max(0, min(1, customer_agent.satisfaction))
-
-
-def update_seller_ratings_based_on_purchase(product_agent, order_of_purchased_product):
-    """
-    Update the seller's rating based on customer feedback.
-
-    This function adjusts the seller's rating based on the order position of the purchased product,
-    indicating the timeliness and efficiency of the seller's service.
-
-    Parameters:
-    product_agent - The ProductAgent instance for the purchased product.
-    customer_agent - The CustomerAgent instance making the purchase.
-    order_of_purchased_product - The order position of the purchased product.
-
-    The seller's rating is bounded between 0 and 1.
-    """
-    # Update seller's rating based on order_of_purchased_product
-    if order_of_purchased_product is not None:
-        if order_of_purchased_product <= 20:
-            # Positive feedback for lower average order values
-            product_agent.seller.rating += 0.05
-        elif order_of_purchased_product <= 40:
-            # Positive feedback for lower average order values
-            product_agent.seller.rating += 0.03
-        else:
-            # Negative feedback for higher average order values
-            product_agent.seller.rating -= 0.01
-
-    # Make sure the seller's rating is between 0 and 1
-    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
-
-
-def update_seller_ratings_based_on_product(product_agent):
-    """
-    Update the seller's rating based on product's average rating.
-
-    This function calculates the average customer rating for the product and further adjusts the seller's rating
-    based on this average rating, reflecting the overall customer satisfaction with the product.
-
-    The seller's rating is bounded between 0 and 1.
-    """
-
-    # Calculate the average rating of the product
-    if product_agent.customers_comment:
-        average_product_rating = sum(product_agent.customers_comment.values()) / len(product_agent.customers_comment)
-    else:
-        average_product_rating = 0
-
-    # Update seller rating based on product's average rating
-    if average_product_rating >= 4:
-        product_agent.seller.rating += 0.03
-    elif average_product_rating >= 3:
-        product_agent.seller.rating += 0.02
-    elif average_product_rating < 3:
-        product_agent.seller.rating -= 0.01
-    else:
-        product_agent.seller.rating -= 0.02
-
-    # Make sure the seller's rating is between 0 and 1
-    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
-
-
 class OnlinePlatformModel(mesa.Model):
-    def __init__(self, num_customers, num_products, num_retailers, num_customers_willing_to_share_info):
+    def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
+                 learning_rate_gen_ai, learning_rate_customer, capacity_gen_ai):
         super().__init__()
         self.step_counter = 0
-        self.total_steps = 50
+        self.total_steps = 35
         self.used_ids = set()  # Track used IDs
         self.num_customers = num_customers
         self.num_products = num_products
         self.num_retailers = num_retailers
-        self.num_customers_willing_to_share_info = num_customers_willing_to_share_info
+        self.num_customers_willing_to_share_info = int(percentage_willing_to_share_info * num_customers)
         self.total_sales = 0
         self.sales_willing = 0
         self.sales_unwilling = 0
         self.num_sold_products = 0
         self.num_sold_products_willing = 0
         self.num_sold_products_unwilling = 0
+
+        self.learning_rate_gen_ai = learning_rate_gen_ai
+        self.learning_rate_customer = learning_rate_customer
+        self.capacity_gen_ai = capacity_gen_ai
 
         self.G = nx.erdos_renyi_graph(n=self.num_customers, p=0.5)
         self.grid = mesa.space.NetworkGrid(self.G)
@@ -205,7 +113,7 @@ class OnlinePlatformModel(mesa.Model):
             self.schedule.add(product)
 
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self)
+        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, self.learning_rate_gen_ai, self.capacity_gen_ai)
 
         self.running = True
         self.datacollector.collect(self)
@@ -326,10 +234,9 @@ class OnlinePlatformModel(mesa.Model):
         product_agents = default_recommendations if default_recommendations is not None else self.get_product_agents()
         random.shuffle(product_agents)
 
-        for product in product_agents:
-            # update products price and discount randomly in each simulation
-            product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
-            # product.price = max(0, product.price + random.uniform(-0.2, 0.2))
+        # for product in product_agents:
+        # update products price and discount randomly in each simulation
+        # product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
 
         customer_agents = self.get_customer_agents()
 
@@ -344,7 +251,7 @@ class OnlinePlatformModel(mesa.Model):
             num_products_to_consider = int(len(products_to_consider) * 0.7)
 
             for index, product in enumerate(products_to_consider[:num_products_to_consider]):
-                print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
+                # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
                 decision = customer.make_purchase_decision(product, customer.willing_to_share_info,
                                                            self.generative_ai.learning_rate)
                 customer.make_comment(product)
@@ -398,9 +305,40 @@ class OnlinePlatformModel(mesa.Model):
         df = pd.DataFrame(self.purchase_decisions)
         df.to_csv(filename, index=False)
 
+    def export_combined_simulation_data_to_csv(self, filename):
+        """
+        Exports both model parameters and data collected by the DataCollector to a single CSV file.
+
+        Parameters:
+        filename - Name of the CSV file to which the combined data will be exported.
+        """
+        # Collect model parameters into a DataFrame
+        model_parameters = {
+            'num_customers': self.num_customers,
+            'num_products': self.num_products,
+            'num_retailers': self.num_retailers,
+            'num_customers_willing_to_share_info': self.num_customers_willing_to_share_info,
+            'learning_rate_gen_ai': self.learning_rate_gen_ai,
+            'learning_rate_customer': self.learning_rate_customer,
+            'capacity_gen_ai': self.capacity_gen_ai,
+            'total_steps': self.total_steps
+        }
+        model_parameters_df = pd.DataFrame([model_parameters])
+
+        # Get the latest data collected by the DataCollector
+        collected_data_df = self.datacollector.get_model_vars_dataframe().iloc[-1:]
+
+        # Combine model parameters and the latest collected data into one DataFrame
+        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)],
+                                axis=1)
+        # Export the combined DataFrame to a CSV file
+        combined_df.to_csv(filename, index=False)
+
     def export_data_if_final_step(self):
-        if self.step_counter == self.total_steps:
-            self.export_purchase_decisions_to_csv("purchase_decisions.csv")
+        pass
+        # if self.step_counter == self.total_steps:
+        # self.export_purchase_decisions_to_csv("purchase_decisions.csv")
+        # self.export_combined_simulation_data_to_csv("simulation.csv")
 
     def calculate_linear_aic(self, willing_to_share=None):
         """
@@ -454,8 +392,8 @@ class OnlinePlatformModel(mesa.Model):
         X = sm.add_constant(df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']])
         model = sm.OLS(df['satisfaction'], X).fit()
 
-        if willing_to_share is None:
-            print(model.summary())
+        """if willing_to_share is None:
+            print(model.summary())"""
 
         return model.aic
 
@@ -500,7 +438,7 @@ class OnlinePlatformModel(mesa.Model):
         df = pd.DataFrame(data)
 
         if df.empty:
-            print("No data available for AIC calculation.")
+            # print("No data available for AIC calculation.")
             return None
 
         X = df[['avg_price', 'avg_quality', 'avg_content']]
@@ -553,139 +491,9 @@ class OnlinePlatformModel(mesa.Model):
         X = sm.add_constant(df[['price', 'quality', 'content', 'willing_to_share_info']])
         model = sm.OLS(df['satisfaction'], X).fit()
 
-        if willing_to_share is None:
-            print(model.summary())
+        """if willing_to_share is None:
+            print(model.summary())"""
 
-        return model.aic
-
-    def calculate_quadratic_aic(self, willing_to_share):
-        """
-        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
-
-        AIC = -2 ln(L) + 2k
-
-        Returns:
-        AIC value
-        """
-
-        # Initialize lists to store data
-        data = {
-            'avg_price': [],
-            'avg_quality': [],
-            'avg_content': [],
-            'satisfaction': []
-        }
-
-        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
-
-        for customer in customers:
-            if customer.shopping_history:
-                avg_price = np.mean([product.price for product in customer.shopping_history])
-                avg_quality = np.mean([product.quality for product in customer.shopping_history])
-                avg_content = np.mean([product.content_score for product in customer.shopping_history])
-                satisfaction = customer.satisfaction
-
-                data['avg_price'].append(avg_price)
-                data['avg_quality'].append(avg_quality)
-                data['avg_content'].append(avg_content)
-                data['satisfaction'].append(satisfaction)
-
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            return None
-
-        # Create the matrix of independent variables with quadratic terms
-        X = df[['avg_price', 'avg_quality', 'avg_content']]
-        X = np.column_stack((X, X ** 2))
-        X = sm.add_constant(X)
-
-        # Fit the quadratic regression model
-        model = sm.OLS(df['satisfaction'], X).fit()
-
-        # Return the AIC value
-        return model.aic
-
-    def calculate_cubic_aic(self, willing_to_share):
-        data = {
-            'avg_price': [],
-            'avg_quality': [],
-            'avg_content': [],
-            'satisfaction': [],
-            'customer_id': []
-        }
-
-        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
-
-        for customer in customers:
-            if customer.shopping_history:
-                avg_price = np.mean([product.price for product in customer.shopping_history])
-                avg_quality = np.mean([product.quality for product in customer.shopping_history])
-                avg_content = np.mean([product.content_score for product in customer.shopping_history])
-                satisfaction = customer.satisfaction
-
-                data['avg_price'].append(avg_price)
-                data['avg_quality'].append(avg_quality)
-                data['avg_content'].append(avg_content)
-                data['satisfaction'].append(satisfaction)
-                data['customer_id'].append(customer.unique_id)
-
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            print("No data available for AIC calculation.")
-            return None
-
-        # Create the matrix of independent variables with cubic terms
-        X = df[['avg_price', 'avg_quality', 'avg_content']]
-        X = np.column_stack((X, X ** 2, X ** 3))
-        X = sm.add_constant(X)
-
-        # Fit the cubic regression model
-        model = sm.OLS(df['satisfaction'], X).fit()
-
-        # Return the AIC value
-        return model.aic
-
-    def calculate_quartic_aic(self, willing_to_share):
-        data = {
-            'avg_price': [],
-            'avg_quality': [],
-            'avg_content': [],
-            'satisfaction': [],
-            'customer_id': []
-        }
-
-        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
-
-        for customer in customers:
-            if customer.shopping_history:
-                avg_price = np.mean([product.price for product in customer.shopping_history])
-                avg_quality = np.mean([product.quality for product in customer.shopping_history])
-                avg_content = np.mean([product.content_score for product in customer.shopping_history])
-                satisfaction = customer.satisfaction
-
-                data['avg_price'].append(avg_price)
-                data['avg_quality'].append(avg_quality)
-                data['avg_content'].append(avg_content)
-                data['satisfaction'].append(satisfaction)
-                data['customer_id'].append(customer.unique_id)
-
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            print("No data available for AIC calculation.")
-            return None
-
-        # Create the matrix of independent variables with quartic terms
-        X = df[['avg_price', 'avg_quality', 'avg_content']]
-        X = np.column_stack((X, X ** 2, X ** 3, X ** 4))
-        X = sm.add_constant(X)
-
-        # Fit the quartic regression model
-        model = sm.OLS(df['satisfaction'], X).fit()
-
-        # Return the AIC value
         return model.aic
 
     def calculate_polynomial_aic_test(self, max_degree, willing_to_share=None):
@@ -721,7 +529,7 @@ class OnlinePlatformModel(mesa.Model):
         df = pd.DataFrame(filtered_data)
 
         if df.empty:
-            print("No data available for AIC calculation.")
+            # print("No data available for AIC calculation.")
             return None
         # Create polynomial features
         X = df[['price', 'quality', 'content', 'willing_to_share_info']]
@@ -763,7 +571,7 @@ class OnlinePlatformModel(mesa.Model):
         df = pd.DataFrame(data)
 
         if df.empty:
-            print("No data available for AIC calculation.")
+            # print("No data available for AIC calculation.")
             return None
 
         model = smf.mixedlm("satisfaction ~ avg_price + avg_quality + avg_content", df, groups=df["customer_id"])
@@ -775,7 +583,7 @@ class OnlinePlatformModel(mesa.Model):
         # Increment step counter
         self.step_counter += 1
         # A: E-commerce platform updates sellers and product information
-        self.print_all_product_parameters()
+        # self.print_all_product_parameters()
 
         # B: Generative AI generates basic recommendations
 
@@ -806,3 +614,148 @@ class OnlinePlatformModel(mesa.Model):
         self.datacollector.collect(self)
 
         self.export_data_if_final_step()
+
+
+def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product):
+    """
+    Update the customer's satisfaction based on the number of products purchased and the average order of purchased products.
+
+    The satisfaction level is adjusted upwards if the customer purchases more than one product or if the average order
+    of the purchased products is low, indicating quick and efficient service. Conversely, the satisfaction decreases
+    if no products are purchased or if the average order is high, indicating slow service.
+
+    Parameters:
+    customer_agent - The CustomerAgent instance.
+    products_purchased - The number of products purchased by the customer.
+    average_order_of_purchased_product - The average order position of the purchased products.
+
+    The customer's satisfaction is bounded between 0 and 1.
+    """
+    # Update the customer's satisfaction based on the number of products purchased
+    if products_purchased > 5:
+        customer_agent.satisfaction += 0.08
+    elif products_purchased > 3:
+        customer_agent.satisfaction += 0.05
+    elif products_purchased == 1:
+        customer_agent.satisfaction += 0.03
+    else:
+        customer_agent.satisfaction -= 0.1
+
+    # Additional logic based on average order of purchased products
+    if average_order_of_purchased_product is not None:
+        if average_order_of_purchased_product <= 20:
+            # Positive feedback for lower average order values
+            customer_agent.satisfaction += 0.1
+        elif average_order_of_purchased_product <= 40:
+            # Positive feedback for lower average order values
+            customer_agent.satisfaction += 0.05
+        else:
+            # Negative feedback for higher average order values
+            customer_agent.satisfaction -= 0.03
+
+    customer_agent.satisfaction = max(0, min(1, customer_agent.satisfaction))
+
+
+def update_seller_ratings_based_on_purchase(product_agent, order_of_purchased_product):
+    """
+    Update the seller's rating based on customer feedback.
+
+    This function adjusts the seller's rating based on the order position of the purchased product,
+    indicating the timeliness and efficiency of the seller's service.
+
+    Parameters:
+    product_agent - The ProductAgent instance for the purchased product.
+    customer_agent - The CustomerAgent instance making the purchase.
+    order_of_purchased_product - The order position of the purchased product.
+
+    The seller's rating is bounded between 0 and 1.
+    """
+    # Update seller's rating based on order_of_purchased_product
+    if order_of_purchased_product is not None:
+        if order_of_purchased_product <= 20:
+            # Positive feedback for lower average order values
+            product_agent.seller.rating += 0.05
+        elif order_of_purchased_product <= 40:
+            # Positive feedback for lower average order values
+            product_agent.seller.rating += 0.03
+        else:
+            # Negative feedback for higher average order values
+            product_agent.seller.rating -= 0.01
+
+    # Make sure the seller's rating is between 0 and 1
+    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
+
+
+def update_seller_ratings_based_on_product(product_agent):
+    """
+    Update the seller's rating based on product's average rating.
+
+    This function calculates the average customer rating for the product and further adjusts the seller's rating
+    based on this average rating, reflecting the overall customer satisfaction with the product.
+
+    The seller's rating is bounded between 0 and 1.
+    """
+
+    # Calculate the average rating of the product
+    if product_agent.customers_comment:
+        average_product_rating = sum(product_agent.customers_comment.values()) / len(product_agent.customers_comment)
+    else:
+        average_product_rating = 0
+
+    # Update seller rating based on product's average rating
+    if average_product_rating >= 4:
+        product_agent.seller.rating += 0.03
+    elif average_product_rating >= 3:
+        product_agent.seller.rating += 0.02
+    elif average_product_rating < 3:
+        product_agent.seller.rating -= 0.01
+    else:
+        product_agent.seller.rating -= 0.02
+
+    # Make sure the seller's rating is between 0 and 1
+    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
+
+
+def run_and_export_combined_data(model_class, params_ranges, export_filename):
+    # Generate all combinations of parameter values
+    param_names = sorted(params_ranges)
+    combinations = list(itertools.product(*(params_ranges[name] for name in param_names)))
+
+    # Create an empty DataFrame to store data from all simulations
+    all_data_df = pd.DataFrame()
+
+    # Iterate over each combination using tqdm for the progress bar
+    for params_tuple in tqdm(combinations, desc="Running simulations"):
+        params = dict(zip(param_names, params_tuple))
+
+        # Initialize and run the model
+        model = model_class(**params)
+        for _ in range(model.total_steps):
+            model.step()
+
+        # Collect model parameters and the latest DataCollector data
+        model_parameters_df = pd.DataFrame([params])
+        collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
+
+        # Merge the data
+        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)], axis=1)
+
+        # Append the combined data to the overall DataFrame
+        all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
+
+    # Export the combined data to a CSV file
+    all_data_df.to_csv(export_filename, index=False)
+
+
+# Specified parameter ranges
+params_ranges = {
+    'num_customers': [50, 100],
+    'percentage_willing_to_share_info': [0.2, 0.5, 0.8],
+    'num_products': [60, 90],
+    'num_retailers': [10, 20],
+    'learning_rate_gen_ai': [0.1, 0.3, 0.5, 0.7],
+    'learning_rate_customer': [0.1, 0.3],
+    'capacity_gen_ai': [0.3, 0.6, 0.8]
+}
+
+run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
