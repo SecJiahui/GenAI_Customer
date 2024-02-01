@@ -13,10 +13,10 @@ import GenAI_Customer.agent
 
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
-                 learning_rate_gen_ai, learning_rate_customer, capacity_gen_ai):
+                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai):
         super().__init__()
         self.step_counter = 0
-        self.total_steps = 35
+        self.total_steps = 50
         self.used_ids = set()  # Track used IDs
         self.num_customers = num_customers
         self.num_products = num_products
@@ -31,7 +31,7 @@ class OnlinePlatformModel(mesa.Model):
 
         self.learning_rate_gen_ai = learning_rate_gen_ai
         self.learning_rate_customer = learning_rate_customer
-        self.capacity_gen_ai = capacity_gen_ai
+        self.creativity_gen_ai = creativity_gen_ai
 
         self.G = nx.erdos_renyi_graph(n=self.num_customers, p=0.5)
         self.grid = mesa.space.NetworkGrid(self.G)
@@ -39,6 +39,17 @@ class OnlinePlatformModel(mesa.Model):
         self.schedule = mesa.time.RandomActivation(self)
 
         self.purchase_decisions = []
+
+        """
+        "AIC Linear (Willing)": lambda model: self.calculate_linear_aic(True),
+        "AIC Quadratic (Willing)": lambda model: self.calculate_polynomial_aic(2, True),
+        "AIC Cubic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
+        "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
+        "AIC Linear (Unwilling)": lambda model: self.calculate_linear_aic(False),
+        "AIC Quadratic (Unwilling)": lambda model: self.calculate_polynomial_aic(2, False),
+        "AIC Cubic (Unwilling)": lambda model: self.calculate_polynomial_aic(3, False),
+        "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
+        """
 
         self.datacollector = mesa.DataCollector(
             {
@@ -65,14 +76,7 @@ class OnlinePlatformModel(mesa.Model):
                 "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
                 "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
-                "AIC Linear (Willing)": lambda model: self.calculate_linear_aic(True),
-                "AIC Quadratic (Willing)": lambda model: self.calculate_polynomial_aic(2, True),
-                "AIC Cubic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
-                "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(3, True),
-                "AIC Linear (Unwilling)": lambda model: self.calculate_linear_aic(False),
-                "AIC Quadratic (Unwilling)": lambda model: self.calculate_polynomial_aic(2, False),
-                "AIC Cubic (Unwilling)": lambda model: self.calculate_polynomial_aic(3, False),
-                "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
+
                 # "AIC Quadratic": self.calculate_quadratic_aic,
                 # "AIC Cubic": self.calculate_cubic_aic,
                 # "AIC Quartic": self.calculate_quartic_aic,
@@ -113,7 +117,7 @@ class OnlinePlatformModel(mesa.Model):
             self.schedule.add(product)
 
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, self.learning_rate_gen_ai, self.capacity_gen_ai)
+        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, self.learning_rate_gen_ai, self.creativity_gen_ai)
 
         self.running = True
         self.datacollector.collect(self)
@@ -320,7 +324,7 @@ class OnlinePlatformModel(mesa.Model):
             'num_customers_willing_to_share_info': self.num_customers_willing_to_share_info,
             'learning_rate_gen_ai': self.learning_rate_gen_ai,
             'learning_rate_customer': self.learning_rate_customer,
-            'capacity_gen_ai': self.capacity_gen_ai,
+            'creativity_gen_ai': self.creativity_gen_ai,
             'total_steps': self.total_steps
         }
         model_parameters_df = pd.DataFrame([model_parameters])
@@ -388,6 +392,10 @@ class OnlinePlatformModel(mesa.Model):
 
         if df.empty:
             return None
+
+        # Checking and handling NaN values
+        if df.isnull().values.any():
+            df = df.dropna()  # or you can use df.fillna(value)
 
         X = sm.add_constant(df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']])
         model = sm.OLS(df['satisfaction'], X).fit()
@@ -749,13 +757,13 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
 
 # Specified parameter ranges
 params_ranges = {
-    'num_customers': [50, 100],
-    'percentage_willing_to_share_info': [0.2, 0.5, 0.8],
-    'num_products': [60, 90],
-    'num_retailers': [10, 20],
-    'learning_rate_gen_ai': [0.1, 0.3, 0.5, 0.7],
-    'learning_rate_customer': [0.1, 0.3],
-    'capacity_gen_ai': [0.3, 0.6, 0.8]
+    'num_customers': [20, 50, 100],
+    'percentage_willing_to_share_info': [0, 1],
+    'num_products': [60, 90, 150],
+    'num_retailers': [10, 20, 30],
+    'learning_rate_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
+    'learning_rate_customer': [0.3],
+    'creativity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9]
 }
 
 run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
