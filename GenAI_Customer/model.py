@@ -244,7 +244,7 @@ class OnlinePlatformModel(mesa.Model):
         """Process purchases for each customer."""
         # Get all product agents or use default recommendations if provided
         product_agents = default_content if default_content is not None else self.get_product_agents()
-        # random.shuffle(product_agents)
+        random.shuffle(product_agents)
 
         # for product in product_agents:
         # update products price and discount randomly in each simulation
@@ -273,17 +273,15 @@ class OnlinePlatformModel(mesa.Model):
                 # Use the default list of products
                 products_to_consider = product_agents
 
-            # num_products_to_consider = int(len(products_to_consider) * 0.8)
+            num_products_to_consider = int(len(products_to_consider) * 0.8)
 
-            # for index, product in enumerate(products_to_consider[:num_products_to_consider]):
-            for index, product in enumerate(products_to_consider):
-                if products_purchased >= 8:
+            for index, product in enumerate(products_to_consider[:num_products_to_consider]):
+                if products_purchased >= 6:
                     # If the consumer has purchased 8 items, stop purchasing
                     break
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
-                decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
-                                                           self.generative_ai.content_improvement, self.generative_ai.creativity)
+                decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai, self.generative_ai.creativity, self.generative_ai.learning_rate)
                 customer.make_comment(product)
 
                 # Collect purchase decision data
@@ -294,7 +292,7 @@ class OnlinePlatformModel(mesa.Model):
                     "satisfaction": customer.satisfaction,
                     'purchase_decision': decision['purchase_decision'],
                     'decision_factor': decision['decision_factor'],
-                    'generative_ai_creativity': decision['generative_ai_creativity'],
+                    'generative_ai_learning_rate': decision['generative_ai_learning_rate'],
                     'content_matched': decision['content_matched'],
                     "product_id": product.unique_id,
                     "product_price": product.price,
@@ -305,8 +303,8 @@ class OnlinePlatformModel(mesa.Model):
 
                 if decision['purchase_decision']:
                     if product.unique_id == 1008610086:
-                        self.generative_ai.content_improvement += self.generative_ai.learning_rate
-                        self.generative_ai.content_improvement = max(0.1, min(self.generative_ai.content_improvement, 5))
+                        self.generative_ai.creativity += self.generative_ai.learning_rate * 3
+                        self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))
 
                     if decision['content_matched']:
                         num_content_matched += 1
@@ -324,8 +322,8 @@ class OnlinePlatformModel(mesa.Model):
                     update_seller_ratings_based_on_purchase(product, index)
 
                 if not decision['purchase_decision'] and product.unique_id == 1008610086:
-                    self.generative_ai.content_improvement -= self.generative_ai.learning_rate * 0.3
-                    self.generative_ai.content_improvement = max(0.1, min(self.generative_ai.content_improvement, 5))
+                    self.generative_ai.creativity -= self.generative_ai.learning_rate * 0.3
+                    self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
@@ -496,132 +494,6 @@ class OnlinePlatformModel(mesa.Model):
 
         return model.aic
 
-    def calculate_linear_aic_test(self, willing_to_share=None):
-        """
-        Calculate the AIC for a customer satisfaction model based on product attributes using a linear model.
-
-        AIC = -2 ln(L) + 2k
-
-        Parameters:
-        willing_to_share: Boolean indicating whether to include only customers who are willing to share their info or not.
-
-        Returns:
-        AIC value
-        """
-        # Initialize lists to store filtered data
-        filtered_data = {
-            'price': [],
-            'quality': [],
-            'content': [],
-            'satisfaction': [],
-            'willing_to_share_info': []
-        }
-
-        # Filter the purchase decisions based on the willingness to share info
-        for decision in self.purchase_decisions:
-            if willing_to_share is None or decision['willing_to_share_info'] == willing_to_share:
-                filtered_data['price'].append(decision['product_price'])
-                filtered_data['quality'].append(decision['product_quality'])
-                filtered_data['content'].append(decision['product_content'])
-                filtered_data['satisfaction'].append(decision['satisfaction'])
-                filtered_data['willing_to_share_info'].append(decision['willing_to_share_info'])
-
-        df = pd.DataFrame(filtered_data)
-
-        if df.empty:
-            return None
-
-        X = sm.add_constant(df[['price', 'quality', 'content', 'willing_to_share_info']])
-        model = sm.OLS(df['satisfaction'], X).fit()
-
-        """if willing_to_share is None:
-            print(model.summary())"""
-
-        return model.aic
-
-    def calculate_polynomial_aic_test(self, max_degree, willing_to_share=None):
-        """
-        Calculate the AIC for a customer satisfaction model based on product attributes using a linear model.
-
-        AIC = -2 ln(L) + 2k
-
-        Parameters:
-        willing_to_share: Boolean indicating whether to include only customers who are willing to share their info or not.
-
-        Returns:
-        AIC value
-        """
-        # Initialize lists to store filtered data
-        filtered_data = {
-            'price': [],
-            'quality': [],
-            'content': [],
-            'satisfaction': [],
-            'willing_to_share_info': []
-        }
-
-        # Filter the purchase decisions based on the willingness to share info
-        for decision in self.purchase_decisions:
-            if willing_to_share is None or decision['willing_to_share_info'] == willing_to_share:
-                filtered_data['price'].append(decision['product_price'])
-                filtered_data['quality'].append(decision['product_quality'])
-                filtered_data['content'].append(decision['product_content'])
-                filtered_data['satisfaction'].append(decision['satisfaction'])
-                filtered_data['willing_to_share_info'].append(decision['willing_to_share_info'])
-
-        df = pd.DataFrame(filtered_data)
-
-        if df.empty:
-            # print("No data available for AIC calculation.")
-            return None
-        # Create polynomial features
-        X = df[['price', 'quality', 'content', 'willing_to_share_info']]
-        for degree in range(2, max_degree + 1):
-            X = np.column_stack((X, df[['price', 'quality', 'content', 'willing_to_share_info']] ** degree))
-
-        X = sm.add_constant(X)
-        model = sm.OLS(df['satisfaction'], X).fit()
-
-        """if willing_to_share is None and max_degree == 4:
-            print(model.summary())"""
-
-        return model.aic
-
-    def calculate_hierarchical_aic(self, willing_to_share):
-        data = {
-            'avg_price': [],
-            'avg_quality': [],
-            'avg_content': [],
-            'satisfaction': [],
-            'customer_id': []
-        }
-
-        customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
-
-        for customer in customers:
-            if customer.shopping_history:
-                avg_price = np.mean([product.price for product in customer.shopping_history])
-                avg_quality = np.mean([product.quality for product in customer.shopping_history])
-                avg_content = np.mean([product.content_score for product in customer.shopping_history])
-                satisfaction = customer.satisfaction
-
-                data['avg_price'].append(avg_price)
-                data['avg_quality'].append(avg_quality)
-                data['avg_content'].append(avg_content)
-                data['satisfaction'].append(satisfaction)
-                data['customer_id'].append(customer.unique_id)
-
-        df = pd.DataFrame(data)
-
-        if df.empty:
-            # print("No data available for AIC calculation.")
-            return None
-
-        model = smf.mixedlm("satisfaction ~ avg_price + avg_quality + avg_content", df, groups=df["customer_id"])
-        model_fit = model.fit()
-
-        return model_fit.aic
-
     def step(self):
         # Increment step counter
         self.step_counter += 1
@@ -682,7 +554,7 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
     elif products_purchased == 1:
         customer_agent.satisfaction += 0.03
     else:
-        customer_agent.satisfaction -= 0.03
+        customer_agent.satisfaction -= 0.05
 
     # Update the customer's satisfaction based on the number of interest matched products
     if num_content_matched > 3:
@@ -694,10 +566,10 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
 
     # Additional logic based on average order of purchased products
     if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= 6:
+        if average_order_of_purchased_product <= 20:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= 12:
+        elif average_order_of_purchased_product <= 40:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.05
         else:
@@ -816,12 +688,12 @@ params_ranges = {
     'num_customers': [50, 100],
     'percentage_willing_to_share_info': [0, 1],
     'num_products': [60, 100],
-    'num_retailers': [10, 20],
-    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
+    'num_retailers': [20],
+    'learning_rate_gen_ai': [0.3, 0.6, 0.9],
     'learning_rate_customer': [0.3],
-    'capacity_gen_ai': [0.1, 0.5, 0.9],
-    'creativity_gen_ai': [0.1, 0.5, 0.9],
-    'total_steps': [50],
+    'capacity_gen_ai': [0.3, 0.6, 0.9],
+    'creativity_gen_ai': [0.3, 0.6, 0.9],
+    'total_steps': [40],
 }
 
-# run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
+run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
