@@ -32,9 +32,7 @@ def number_HighSatisfaction(model):
 def initialize_interests():
     potential_interests = [
         "Sports", "Technology", "Fashion", "Travel", "Music",
-        "Cooking", "Art", "Literature", "Cinema", "Gaming",
-        "Gardening", "Photography", "Health and Fitness", "History", "Science",
-        "Nature", "DIY Crafts", "Astronomy", "Politics", "Dance"
+        "Cooking", "Art", "Literature", "Cinema", "Gaming"
     ]
     return random.sample(potential_interests, k=2)
 
@@ -42,11 +40,9 @@ def initialize_interests():
 def initialize_keyword():
     potential_keyword = [
         "Sports", "Technology", "Fashion", "Travel", "Music",
-        "Cooking", "Art", "Literature", "Cinema", "Gaming",
-        "Gardening", "Photography", "Health and Fitness", "History", "Science",
-        "Nature", "DIY Crafts", "Astronomy", "Politics", "Dance"
+        "Cooking", "Art", "Literature", "Cinema", "Gaming"
     ]
-    return random.sample(potential_keyword, k=random.randint(1, len(potential_keyword)))
+    return random.sample(potential_keyword, k=5)
 
 
 def initialize_brand():
@@ -81,7 +77,7 @@ class CustomerAgent(mesa.Agent):
     def update_satisfaction_level(self):
         self.state = self.get_satisfaction_level()
 
-    def make_purchase_decision(self, product, use_gen_ai, generative_ai_learning_rate):
+    def make_purchase_decision(self, product, use_gen_ai, content_improvement, generative_ai_creativity):
         """
         Make a purchase decision for a given product based on various factors.
 
@@ -116,15 +112,33 @@ class CustomerAgent(mesa.Agent):
 
         # Calculate weighted factors
         # negative influence for higher price_sensitivity
-        price_factor = (1 - self.price_sensitivity) * (1 - product_price / 10)
+        price_factor = (1 - self.price_sensitivity) * (1 - product_price)
         # positive influence for higher quality_sensitivity
         quality_factor = self.quality_sensitivity * product_quality
         # Adjust content factor based on whether generative AI is used
+
+        # Initially set the content factor based on the product's content score.
+        # The use of generative AI and customer interests can further influence this factor.
+        content_factor = product_content
+
+        # Check each customer interest against the product's keywords.
+        # Increase the content factor for each matching interest, indicating higher relevance.
+        for interest in self.interests:
+            if interest in product_keywords:
+                content_factor += 2
+
+        content_match_count = sum(interest in product_keywords for interest in self.interests)
+
+        content_matched = False
+        if content_match_count > 0:
+            content_matched = True
+
+        # Adjust the content factor based on the use of generative AI.
+        # If generative AI is used, incorporate the learning rate into the content score and apply the customer's content sensitivity.
+        # Otherwise, simply apply the content sensitivity to the base product content score.
         if use_gen_ai:
-            # Increase content factor based on generative AI learning rate
-            content_factor = self.content_sensitivity * (product_content + generative_ai_learning_rate)
+            content_factor = self.content_sensitivity * (content_factor + generative_ai_creativity)
         else:
-            # Use only the product content score
             content_factor = self.content_sensitivity * product_content
 
         decision_factor = price_factor + quality_factor + content_factor
@@ -136,10 +150,7 @@ class CustomerAgent(mesa.Agent):
         )"""
 
         # Increase decision factor if product keywords match customer interests
-        for interest in self.interests:
-            if interest in product_keywords:
-                # print(f"Customer is interested in this product")
-                decision_factor += 0.1
+
 
         # Increase decision factor if product brand matches customer shopping list
         if brand in self.shopping_history:
@@ -172,7 +183,7 @@ class CustomerAgent(mesa.Agent):
         # print(f"Total: {decision_factor}")
 
         # Make a purchase decision based on decision factor and threshold
-        purchase_threshold = 1.55
+        purchase_threshold = 1.9
         if decision_factor > purchase_threshold:
             purchase_decision = True
 
@@ -186,7 +197,8 @@ class CustomerAgent(mesa.Agent):
         decision_info = {
             'purchase_decision': purchase_decision,
             'decision_factor': decision_factor,
-            'generative_ai_learning_rate': generative_ai_learning_rate
+            'generative_ai_creativity': generative_ai_creativity,
+            'content_matched': content_matched
         }
 
         return decision_info
@@ -219,13 +231,21 @@ class ProductAgent(mesa.Agent):
         super().__init__(unique_id, model)
         # Product attributes with options for custom initialization
         self.seller = None
-        self.price = 10 * np.random.beta(1, 1) if price is None else price
+        self.price = np.random.beta(1, 1) if price is None else price
         self.quality = np.random.beta(1, 1) if quality is None else quality
         self.content_score = np.random.beta(4, 7) if content is None else content
         self.keywords = initialize_keyword() if keywords is None else keywords
         self.brand = initialize_brand() if brand is None else brand
         self.customers_comment = {}
         self.sales_count = 0
+
+
+class PlatformOwnerAgent(mesa.Agent):
+    def __init__(self, unique_id, model, capacity_gen_ai=None, creativity_gen_ai=None):
+        super().__init__(unique_id, model)
+        # Product attributes with options for custom initialization
+        self.capacity_gen_ai = capacity_gen_ai
+        self.creativity_gen_ai = creativity_gen_ai
 
 
 class SellerAgent(mesa.Agent):
@@ -241,27 +261,29 @@ class SellerAgent(mesa.Agent):
 
 
 class GenerativeAI:
-    def __init__(self, model, learning_rate=None, capacity_gen_ai=0.5):
+    def __init__(self, model, learning_rate=None, capacity=0.5, creativity=0.5):
         # Initialize any necessary attributes
         self.customers_info = {}
         self.learning_rate = learning_rate
         self.product_popularity = {}
         self.model = model
-        self.capacity_gen_ai = capacity_gen_ai
+        self.capacity = capacity
+        self.creativity = creativity
+        self.content_improvement = 0.3
 
-    def generate_basic_recommendations(self, product_agents):
+    def generate_basic_content(self, product_agents):
         """
-        Implement basic recommendation logic by randomly shuffling product agents.
+        Implement basic production content logic by randomly shuffling product agents.
         """
         # Shuffle the list of product agents to simulate recommendation
         shuffled_agents = list(product_agents)  # Create a copy to avoid modifying the original list
         random.shuffle(shuffled_agents)
 
-        recommendations = shuffled_agents
-        return recommendations
+        basic_content = shuffled_agents
+        return basic_content
 
-    def generate_personalized_recommendations(self, customer, products):
-        """Provide personalized recommendations based on customer sensitivities."""
+    def generate_personalized_content(self, customer, products):
+        """Provide personalized production content on customer sensitivities."""
         # Initialize a dictionary to store product scores
         product_scores = {}
 
@@ -269,40 +291,34 @@ class GenerativeAI:
         for product in products:
             product_keywords = product.keywords
             brand = product.brand
-            # Calculate scores based on customer sensitivities
-            price_score = (1 - customer.price_sensitivity) * (1 - product.price / 10)
+            price_score = (1 - customer.price_sensitivity) * (1 - product.price)
             quality_score = customer.quality_sensitivity * product.quality
-            content_score = customer.content_sensitivity * (product.content_score + self.learning_rate)
 
-            total_score = price_score + quality_score + content_score
-
-            # Increase decision factor if product keywords match customer interests
+            content_factor = product.content_score + self.content_improvement
+            # Increase content factor if product keywords match customer interests
             for interest in customer.interests:
                 if interest in product_keywords:
                     # print(f"Customer is interested in this product")
-                    total_score += 0.1
-            """
-            # Increase decision factor if product brand matches customer shopping list
-            if brand in customer.shopping_history:
-                total_score += (0.1 * customer.brand_loyalty)
-            """
+                    content_factor += 0.1
+
+            content_score = customer.content_sensitivity * content_factor
+
+            total_score = price_score + quality_score + content_score
 
             product_scores[product] = total_score
 
         # Find the product that gives the highest total_score for this customer
         best_product = max(product_scores, key=product_scores.get)
 
-        # Extract the best attributes and modify slightly to create a new product
-        # TODO: provide info to platform  that demand is not satisfied
+        # Extract the best attributes and modify slightly to create a new product content
         new_product_attributes = {
             'price': best_product.price,
             'quality': best_product.quality,
-            'discount': best_product.content_score,
-            'keywords': customer.interests[0] if customer.interests else initialize_keyword(),
+            'content': best_product.content_score,
+            'keywords': best_product.keywords,
             'brand': initialize_brand()
         }
 
-        # Generate new product
         new_product = self.generate_new_product(new_product_attributes)
 
         # Randomly select a retailer for the new product
@@ -312,26 +328,22 @@ class GenerativeAI:
         retailer.products.append(new_product)
 
         # Add new product to products list
-        products.append(new_product)
+        products.insert(0, new_product)
 
-        # Add new product to products list of model agent
-        # model.schedule.add(new_product)
-
-        # Update scores with the new product
+        """# Update scores with the new product
         new_product_score = (1 - customer.price_sensitivity) * (1 - new_product.price) \
                             + customer.quality_sensitivity * new_product.quality \
                             + customer.content_sensitivity * new_product.content_score
         product_scores[new_product] = new_product_score
 
-        # Sort products based on capacity
-        num_products_to_sort = int(len(products) * self.capacity_gen_ai)
+        # Sort products based on creativity
+        num_products_to_sort = int(len(products) * self.creativity)
         top_products = sorted(products[:num_products_to_sort], key=lambda p: product_scores[p], reverse=True)
-        sorted_products = top_products + products[num_products_to_sort:]
+        sorted_products = top_products + products[num_products_to_sort:]"""
 
-        # Create recommendations list from sorted products
-        recommendations = sorted_products
+        content = products
 
-        return recommendations
+        return content
 
     def learn_from_customer_interactions(self, customers_feedback):
         # Learn from customer feedback and update algorithms
@@ -350,7 +362,7 @@ class GenerativeAI:
             model=self.model,
             price=max(best_attributes['price'] - 10 * self.learning_rate, 0),
             quality=min(best_attributes['quality'] + self.learning_rate, 1),
-            content=min(best_attributes['discount'] + self.learning_rate, 1),
+            content=min(best_attributes['content'] + self.learning_rate, 1),
             keywords=best_attributes['keywords']
         )
 

@@ -13,15 +13,16 @@ import GenAI_Customer.agent
 
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
-                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai):
+                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai, capacity_gen_ai, total_steps=50):
         super().__init__()
         self.step_counter = 0
-        self.total_steps = 50
+        self.total_steps = total_steps
         self.used_ids = set()  # Track used IDs
         self.num_customers = num_customers
         self.num_products = num_products
         self.num_retailers = num_retailers
         self.num_customers_willing_to_share_info = int(percentage_willing_to_share_info * num_customers)
+        self.percentage_willing_to_share_info = percentage_willing_to_share_info
         self.total_sales = 0
         self.sales_willing = 0
         self.sales_unwilling = 0
@@ -31,6 +32,7 @@ class OnlinePlatformModel(mesa.Model):
 
         self.learning_rate_gen_ai = learning_rate_gen_ai
         self.learning_rate_customer = learning_rate_customer
+        self.capacity_gen_ai = capacity_gen_ai
         self.creativity_gen_ai = creativity_gen_ai
 
         self.G = nx.erdos_renyi_graph(n=self.num_customers, p=0.5)
@@ -116,8 +118,14 @@ class OnlinePlatformModel(mesa.Model):
 
             self.schedule.add(product)
 
+        # Creat platform owner
+        unique_id = self.get_unique_id()
+        platform_owner = GenAI_Customer.agent.PlatformOwnerAgent(unique_id, self.capacity_gen_ai,
+                                                                 self.creativity_gen_ai)
+        self.schedule.add(platform_owner)
+
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, self.learning_rate_gen_ai, self.creativity_gen_ai)
+        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, platform_owner.capacity_gen_ai, platform_owner.creativity_gen_ai)
 
         self.running = True
         self.datacollector.collect(self)
@@ -232,32 +240,50 @@ class OnlinePlatformModel(mesa.Model):
                 )
                 print(product_info)
 
-    def process_customer_purchases(self, default_recommendations):
+    def process_customer_purchases(self, default_content):
         """Process purchases for each customer."""
         # Get all product agents or use default recommendations if provided
-        product_agents = default_recommendations if default_recommendations is not None else self.get_product_agents()
-        random.shuffle(product_agents)
+        product_agents = default_content if default_content is not None else self.get_product_agents()
+        # random.shuffle(product_agents)
 
         # for product in product_agents:
         # update products price and discount randomly in each simulation
-        # product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
+            # product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
 
         customer_agents = self.get_customer_agents()
+
+        # Calculate the number of customers to receive AI-generated considerations based on capacity_gen_ai
+        num_customers_gen_ai = int(len(customer_agents) * self.capacity_gen_ai * self.percentage_willing_to_share_info)
+
+        # Randomly select a subset of customers for generative AI enhancements
+        customers_gen_ai = random.sample(customer_agents, num_customers_gen_ai)
 
         for customer in customer_agents:
             products_purchased = 0  # Track the amount of purchased products
             total_purchase_position = 0  # Sum of orders of all purchased products
+            num_content_matched = 0
 
-            # Get personalized products for customers willing to share info
-            # For others, use the default list of products
-            products_to_consider = self.generative_ai.generate_personalized_recommendations(customer,
-                                                                                            product_agents) if customer.willing_to_share_info else product_agents
-            num_products_to_consider = int(len(products_to_consider) * 0.7)
+            # Determine if this customer is selected for generative AI enhancements
+            use_gen_ai = customer in customers_gen_ai
 
-            for index, product in enumerate(products_to_consider[:num_products_to_consider]):
+            if use_gen_ai and customer.willing_to_share_info:
+                # Generate personalized products to consider
+                products_to_consider = self.generative_ai.generate_personalized_content(customer, product_agents)
+            else:
+                # Use the default list of products
+                products_to_consider = product_agents
+
+            # num_products_to_consider = int(len(products_to_consider) * 0.8)
+
+            # for index, product in enumerate(products_to_consider[:num_products_to_consider]):
+            for index, product in enumerate(products_to_consider):
+                if products_purchased >= 8:
+                    # If the consumer has purchased 8 items, stop purchasing
+                    break
+
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
-                decision = customer.make_purchase_decision(product, customer.willing_to_share_info,
-                                                           self.generative_ai.learning_rate)
+                decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
+                                                           self.generative_ai.content_improvement, self.generative_ai.creativity)
                 customer.make_comment(product)
 
                 # Collect purchase decision data
@@ -268,7 +294,8 @@ class OnlinePlatformModel(mesa.Model):
                     "satisfaction": customer.satisfaction,
                     'purchase_decision': decision['purchase_decision'],
                     'decision_factor': decision['decision_factor'],
-                    'generative_ai_learning_rate': decision['generative_ai_learning_rate'],
+                    'generative_ai_creativity': decision['generative_ai_creativity'],
+                    'content_matched': decision['content_matched'],
                     "product_id": product.unique_id,
                     "product_price": product.price,
                     "product_quality": product.quality,
@@ -277,8 +304,12 @@ class OnlinePlatformModel(mesa.Model):
                 self.purchase_decisions.append(decision_info)
 
                 if decision['purchase_decision']:
-                    # if product.unique_id == 1008610086:
-                    #     self.generative_ai.learning_rate += 0.001
+                    if product.unique_id == 1008610086:
+                        self.generative_ai.content_improvement += self.generative_ai.learning_rate
+                        self.generative_ai.content_improvement = max(0.1, min(self.generative_ai.content_improvement, 5))
+
+                    if decision['content_matched']:
+                        num_content_matched += 1
 
                     products_purchased += 1
                     total_purchase_position += index
@@ -292,8 +323,9 @@ class OnlinePlatformModel(mesa.Model):
                         self.num_sold_products_unwilling += 1
                     update_seller_ratings_based_on_purchase(product, index)
 
-                # if not decision['purchase_decision'] and product.unique_id == 1008610086:
-                #    self.generative_ai.learning_rate -= 0.001
+                if not decision['purchase_decision'] and product.unique_id == 1008610086:
+                    self.generative_ai.content_improvement -= self.generative_ai.learning_rate * 0.3
+                    self.generative_ai.content_improvement = max(0.1, min(self.generative_ai.content_improvement, 5))
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
@@ -302,7 +334,7 @@ class OnlinePlatformModel(mesa.Model):
                 customer.mean_purchase_position = None
 
             # Update customer satisfaction
-            update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position)
+            update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position, num_content_matched)
 
     def export_purchase_decisions_to_csv(self, filename):
         """Exports purchase decision data to a CSV file."""
@@ -324,6 +356,7 @@ class OnlinePlatformModel(mesa.Model):
             'num_customers_willing_to_share_info': self.num_customers_willing_to_share_info,
             'learning_rate_gen_ai': self.learning_rate_gen_ai,
             'learning_rate_customer': self.learning_rate_customer,
+            'capacity_gen_ai': self.capacity_gen_ai,
             'creativity_gen_ai': self.creativity_gen_ai,
             'total_steps': self.total_steps
         }
@@ -398,12 +431,14 @@ class OnlinePlatformModel(mesa.Model):
             df = df.dropna()  # or you can use df.fillna(value)
 
         X = sm.add_constant(df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']])
-        model = sm.OLS(df['satisfaction'], X).fit()
+        # model = sm.OLS(df['satisfaction'], X).fit()
 
         """if willing_to_share is None:
             print(model.summary())"""
 
-        return model.aic
+        # return model.aic
+
+        return -10
 
     def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
         """
@@ -440,7 +475,7 @@ class OnlinePlatformModel(mesa.Model):
                 data['avg_quality'].append(avg_quality)
                 data['avg_content'].append(avg_content)
                 data['willing_to_share'].append(willing_to_share_info)
-                data['satisfaction'].append(satisfaction)
+                data['satisfaction'].append(max(0, min(1, satisfaction)))
                 data['customer_id'].append(customer.unique_id)
 
         df = pd.DataFrame(data)
@@ -593,27 +628,27 @@ class OnlinePlatformModel(mesa.Model):
         # A: E-commerce platform updates sellers and product information
         # self.print_all_product_parameters()
 
-        # B: Generative AI generates basic recommendations
+        # B: Generative AI generates basic content
 
         product_agents = self.get_product_agents()
-        recommendations = self.generative_ai.generate_basic_recommendations(product_agents)
+        content = self.generative_ai.generate_basic_content(product_agents)
 
         # C: Customers enter keywords to search for products
         # D: E-commerce platform pushes customer information and keywords to Gen AI
-        # E: Generative AI provides hyper-personalized recommendations to customers
+        # E: Generative AI provides hyper-personalized content to customers
         # F: Customers purchase on e-commerce platforms and provide feedback
         # Simulate customers purchasing products and providing feedback
         if self.step_counter == 1:
-            self.process_customer_purchases(default_recommendations=recommendations)
+            self.process_customer_purchases(default_content=content)
         else:
-            self.process_customer_purchases(default_recommendations=None)
+            self.process_customer_purchases(default_content=None)
 
         # G: E-commerce platform updates platform information
         product_agents = self.get_product_agents()
         for product in product_agents:
             update_seller_ratings_based_on_product(product)
 
-        # H: Generative AI learns from customer interactions, updating algorithms to improve future recommendations (done)
+        # H: Generative AI learns from customer interactions, updating algorithms to improve future content (done)
 
         # Advance the model's time step
         self.schedule.step()
@@ -624,7 +659,7 @@ class OnlinePlatformModel(mesa.Model):
         self.export_data_if_final_step()
 
 
-def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product):
+def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product, num_content_matched):
     """
     Update the customer's satisfaction based on the number of products purchased and the average order of purchased products.
 
@@ -641,20 +676,28 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
     """
     # Update the customer's satisfaction based on the number of products purchased
     if products_purchased > 5:
-        customer_agent.satisfaction += 0.08
+        customer_agent.satisfaction += 0.1
     elif products_purchased > 3:
         customer_agent.satisfaction += 0.05
     elif products_purchased == 1:
         customer_agent.satisfaction += 0.03
     else:
-        customer_agent.satisfaction -= 0.1
+        customer_agent.satisfaction -= 0.03
+
+    # Update the customer's satisfaction based on the number of interest matched products
+    if num_content_matched > 3:
+        customer_agent.satisfaction += 0.1
+    elif num_content_matched > 2:
+        customer_agent.satisfaction += 0.05
+    elif num_content_matched == 1:
+        customer_agent.satisfaction += 0.03
 
     # Additional logic based on average order of purchased products
     if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= 20:
+        if average_order_of_purchased_product <= 6:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= 40:
+        elif average_order_of_purchased_product <= 12:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.05
         else:
@@ -691,7 +734,7 @@ def update_seller_ratings_based_on_purchase(product_agent, order_of_purchased_pr
             product_agent.seller.rating -= 0.01
 
     # Make sure the seller's rating is between 0 and 1
-    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
+    # product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
 
 
 def update_seller_ratings_based_on_product(product_agent):
@@ -712,16 +755,16 @@ def update_seller_ratings_based_on_product(product_agent):
 
     # Update seller rating based on product's average rating
     if average_product_rating >= 4:
-        product_agent.seller.rating += 0.03
+        product_agent.seller.rating += 0.03 * 0.02
     elif average_product_rating >= 3:
-        product_agent.seller.rating += 0.02
+        product_agent.seller.rating += 0.02 * 0.02
     elif average_product_rating < 3:
-        product_agent.seller.rating -= 0.01
+        product_agent.seller.rating -= 0.01 * 0.02
     else:
-        product_agent.seller.rating -= 0.02
+        product_agent.seller.rating -= 0.02 * 0.02
 
     # Make sure the seller's rating is between 0 and 1
-    product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
+    # product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
 
 
 def run_and_export_combined_data(model_class, params_ranges, export_filename):
@@ -746,7 +789,8 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
         collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
 
         # Merge the data
-        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)], axis=1)
+        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)],
+                                axis=1)
 
         # Append the combined data to the overall DataFrame
         all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
@@ -756,14 +800,28 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
 
 
 # Specified parameter ranges
-params_ranges = {
-    'num_customers': [20, 50, 100],
+"""params_ranges = {
+    'num_customers': [40, 80, 100],
     'percentage_willing_to_share_info': [0, 1],
-    'num_products': [60, 90, 150],
-    'num_retailers': [10, 20, 30],
+    'num_products': [60, 100, 150],
+    'num_retailers': [10, 20],
     'learning_rate_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
     'learning_rate_customer': [0.3],
-    'creativity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9]
+    'capacity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
+    'creativity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
+    'total_steps': [50],
+}"""
+
+params_ranges = {
+    'num_customers': [50, 100],
+    'percentage_willing_to_share_info': [0, 1],
+    'num_products': [60, 100],
+    'num_retailers': [10, 20],
+    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
+    'learning_rate_customer': [0.3],
+    'capacity_gen_ai': [0.1, 0.5, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
+    'total_steps': [50],
 }
 
-run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
+# run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
