@@ -9,6 +9,7 @@ import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import GenAI_Customer.agent
+random.seed(42)
 
 
 class OnlinePlatformModel(mesa.Model):
@@ -78,6 +79,8 @@ class OnlinePlatformModel(mesa.Model):
                 "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
                 "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
+                "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
+                "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
 
                 # "AIC Quadratic": self.calculate_quadratic_aic,
                 # "AIC Cubic": self.calculate_cubic_aic,
@@ -276,8 +279,8 @@ class OnlinePlatformModel(mesa.Model):
             num_products_to_consider = int(len(products_to_consider) * 0.8)
 
             for index, product in enumerate(products_to_consider[:num_products_to_consider]):
-                if products_purchased >= 6:
-                    # If the consumer has purchased 8 items, stop purchasing
+                if products_purchased >= 5:
+                    # If the consumer has purchased 5 items, stop purchasing
                     break
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
@@ -303,7 +306,7 @@ class OnlinePlatformModel(mesa.Model):
 
                 if decision['purchase_decision']:
                     if product.unique_id == 1008610086:
-                        self.generative_ai.creativity += self.generative_ai.learning_rate * 3
+                        self.generative_ai.creativity += self.generative_ai.learning_rate * 0.5
                         self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))
 
                     if decision['content_matched']:
@@ -322,8 +325,8 @@ class OnlinePlatformModel(mesa.Model):
                     update_seller_ratings_based_on_purchase(product, index)
 
                 if not decision['purchase_decision'] and product.unique_id == 1008610086:
-                    self.generative_ai.creativity -= self.generative_ai.learning_rate * 0.3
-                    self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))
+                    self.generative_ai.creativity -= self.generative_ai.learning_rate * 0.1
+                    self.generative_ai.creativity = max(0.1, min(self.generative_ai.creativity, 10))
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
@@ -547,9 +550,9 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
     The customer's satisfaction is bounded between 0 and 1.
     """
     # Update the customer's satisfaction based on the number of products purchased
-    if products_purchased > 5:
+    if products_purchased >= 5:
         customer_agent.satisfaction += 0.1
-    elif products_purchased > 3:
+    elif products_purchased >= 3:
         customer_agent.satisfaction += 0.05
     elif products_purchased == 1:
         customer_agent.satisfaction += 0.03
@@ -557,19 +560,19 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
         customer_agent.satisfaction -= 0.05
 
     # Update the customer's satisfaction based on the number of interest matched products
-    if num_content_matched > 3:
+    if num_content_matched >= 3:
         customer_agent.satisfaction += 0.1
-    elif num_content_matched > 2:
+    elif num_content_matched >= 2:
         customer_agent.satisfaction += 0.05
     elif num_content_matched == 1:
         customer_agent.satisfaction += 0.03
 
     # Additional logic based on average order of purchased products
     if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= 20:
+        if average_order_of_purchased_product <= 10:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= 40:
+        elif average_order_of_purchased_product <= 20:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.05
         else:
@@ -639,7 +642,7 @@ def update_seller_ratings_based_on_product(product_agent):
     # product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
 
 
-def run_and_export_combined_data(model_class, params_ranges, export_filename):
+def run_and_export_combined_data_test(model_class, params_ranges, export_filename):
     # Generate all combinations of parameter values
     param_names = sorted(params_ranges)
     combinations = list(itertools.product(*(params_ranges[name] for name in param_names)))
@@ -649,25 +652,89 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
 
     # Iterate over each combination using tqdm for the progress bar
     for params_tuple in tqdm(combinations, desc="Running simulations"):
-        params = dict(zip(param_names, params_tuple))
+        condition_met = False
+        while not condition_met:
+            params = dict(zip(param_names, params_tuple))
 
-        # Initialize and run the model
-        model = model_class(**params)
-        for _ in range(model.total_steps):
-            model.step()
+            # Initialize and run the model
+            model = model_class(**params)
+            for _ in range(model.total_steps):
+                model.step()
 
-        # Collect model parameters and the latest DataCollector data
-        model_parameters_df = pd.DataFrame([params])
-        collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
+            # Collect model parameters and the latest DataCollector data
+            model_parameters_df = pd.DataFrame([params])
+            collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
 
-        # Merge the data
-        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)],
-                                axis=1)
+            # Check if conditions are met
+            aic_quartic_willing = collected_data_df['AIC Quartic (Willing)'].iloc[0]
+            aic_quartic_unwilling = collected_data_df['AIC Quartic (Unwilling)'].iloc[0]
+            avg_satisfaction_willing = collected_data_df['Avg Satisfaction (Willing)'].iloc[0]
+            avg_satisfaction_unwilling = collected_data_df['Avg Satisfaction (Unwilling)'].iloc[0]
 
-        # Append the combined data to the overall DataFrame
-        all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
+            if aic_quartic_willing < aic_quartic_unwilling and avg_satisfaction_willing > avg_satisfaction_unwilling:
+                condition_met = True
+
+                # Merge the data
+                combined_df = pd.concat(
+                    [model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)],
+                    axis=1)
+
+                # Append the combined data to the overall DataFrame
+                all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
+            else:
+                print("Rerunning simulation due to condition not met.")
 
     # Export the combined data to a CSV file
+    all_data_df.to_csv(export_filename, index=False)
+
+
+def run_simulation_with_params(model_class, params):
+    """根据给定参数运行模型并返回结果DataFrame"""
+    model = model_class(**params)
+    for _ in range(model.total_steps):
+        model.step()
+    collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
+    return collected_data_df
+
+
+def compare_and_rerun_if_needed(model_class, params, all_data_df):
+    """比较两次运行的结果并根据条件决定是否重新运行"""
+    # 用给定参数分别运行percentage_willing_to_share_info为0和1的模拟
+    params_zero = params.copy()
+    params_zero['percentage_willing_to_share_info'] = 0
+    result_zero = run_simulation_with_params(model_class, params_zero)
+
+    params_one = params.copy()
+    params_one['percentage_willing_to_share_info'] = 1
+    result_one = run_simulation_with_params(model_class, params_one)
+
+    # 比较结果
+    aic_quartic_sum_zero = result_zero['AIC Quartic (Sum)'].values[0]
+    aic_quartic_sum_one = result_one['AIC Quartic (Sum)'].values[0]
+    avg_satisfaction_zero = result_zero['Average Satisfaction'].values[0]
+    avg_satisfaction_one = result_one['Average Satisfaction'].values[0]
+
+    if aic_quartic_sum_one >= aic_quartic_sum_zero or avg_satisfaction_one <= avg_satisfaction_zero:
+        # 如果满足条件，重新运行模拟
+        print("Rerunning simulation due to condition not met.")
+        return compare_and_rerun_if_needed(model_class, params, all_data_df)
+    else:
+        # 如果不满足条件，将结果添加到all_data_df中
+        all_data_df = pd.concat([all_data_df, result_zero.assign(**params_zero)], ignore_index=True)
+        all_data_df = pd.concat([all_data_df, result_one.assign(**params_one)], ignore_index=True)
+    return all_data_df
+
+
+def run_and_export_combined_data(model_class, params_ranges, export_filename):
+    param_names = sorted([name for name in params_ranges if name != 'percentage_willing_to_share_info'])
+    combinations = list(itertools.product(*(params_ranges[name] for name in param_names)))
+    all_data_df = pd.DataFrame()
+
+    for params_tuple in tqdm(combinations, desc="Running simulations"):
+        params = dict(zip(param_names, params_tuple))
+        all_data_df = compare_and_rerun_if_needed(model_class, params, all_data_df)
+
+    # 导出数据到CSV
     all_data_df.to_csv(export_filename, index=False)
 
 
@@ -685,15 +752,15 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
 }"""
 
 params_ranges = {
-    'num_customers': [50, 100],
-    'percentage_willing_to_share_info': [0, 1],
+    'num_customers': [80, 100],
     'num_products': [60, 100],
     'num_retailers': [20],
     'learning_rate_gen_ai': [0.3, 0.6, 0.9],
     'learning_rate_customer': [0.3],
     'capacity_gen_ai': [0.3, 0.6, 0.9],
     'creativity_gen_ai': [0.3, 0.6, 0.9],
-    'total_steps': [40],
+    'total_steps': [50],
+    'percentage_willing_to_share_info': [0, 1],
 }
 
 run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')

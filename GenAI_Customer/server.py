@@ -162,6 +162,14 @@ chart_AIC_sum = mesa.visualization.ChartModule(
     data_collector_name='datacollector'
 )
 
+chart_AIC = mesa.visualization.ChartModule(
+    [
+        {"Label": "AIC Quartic (Willing)", "Color": "green"},
+        {"Label": "AIC Quartic (Unwilling)", "Color": "yellow"},
+    ],
+    data_collector_name='datacollector'
+)
+
 model_params = {
     "num_customers": mesa.visualization.Slider("Number of Customers", 100, 20, 200, 5, 1),
     "percentage_willing_to_share_info": mesa.visualization.Slider("Percentage of Customer willing to share Info", 0.5, 0, 1.0, 0.1, 1),
@@ -177,7 +185,7 @@ model_params = {
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
     [network, chart_satisfaction, chart_avg_satisfaction, chart_avg_rating,
-     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC_sum, chart_AIC_willing, chart_AIC_unwilling],  # Add visualization modules
+     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC_sum, chart_AIC],  # Add visualization modules
     # [network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,

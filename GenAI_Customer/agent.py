@@ -1,10 +1,9 @@
 import mesa
 import random
 from enum import Enum
-
 import numpy as np
-
 import GenAI_Customer
+random.seed(42)
 
 
 class State(Enum):
@@ -124,21 +123,23 @@ class CustomerAgent(mesa.Agent):
 
         # Check each customer interest against the product's keywords.
         # Increase the content factor for each matching interest, indicating higher relevance.
-        for interest in self.interests:
+        """for interest in self.interests:
             if interest in product_keywords:
-                content_factor += 0.5
+                content_factor += 1"""
 
         content_match_count = sum(interest in product_keywords for interest in self.interests)
 
         content_matched = False
-        if content_match_count > 0:
-            content_matched = True
+        """if content_match_count > 0:
+            content_matched = True"""
 
         # Adjust the content factor based on the use of generative AI.
         # If generative AI is used, incorporate the learning rate into the content score and apply the customer's content sensitivity.
         # Otherwise, simply apply the content sensitivity to the base product content score.
         if customer_use_gen_ai and product_use_gen_ai:
-            content_factor = self.content_sensitivity * (content_factor + generative_ai_creativity * 3)
+            content_factor = self.content_sensitivity * (content_factor + generative_ai_creativity)
+            if product_content + generative_ai_creativity > 1:
+                content_matched = True
         else:
             content_factor = self.content_sensitivity * product_content
 
@@ -184,7 +185,7 @@ class CustomerAgent(mesa.Agent):
         # print(f"Total: {decision_factor}")
 
         # Make a purchase decision based on decision factor and threshold
-        purchase_threshold = 1.55
+        purchase_threshold = 1.5
         if decision_factor > purchase_threshold:
             purchase_decision = True
 
