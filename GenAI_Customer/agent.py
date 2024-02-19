@@ -4,6 +4,7 @@ from enum import Enum
 import numpy as np
 import GenAI_Customer
 random.seed(42)
+np.random.seed(42)
 
 
 class State(Enum):
@@ -64,6 +65,7 @@ class CustomerAgent(mesa.Agent):
         self.brand_loyalty = np.random.beta(2, 2)  # Beta distribution, balanced brand loyalty
         self.mean_purchase_position = None
         self.state = self.get_satisfaction_level()
+        self.num_content_matched = 0
 
     def get_satisfaction_level(self):
         if self.satisfaction >= 0.8:
@@ -76,7 +78,7 @@ class CustomerAgent(mesa.Agent):
     def update_satisfaction_level(self):
         self.state = self.get_satisfaction_level()
 
-    def make_purchase_decision(self, product, customer_use_gen_ai, generative_ai_creativity, generative_ai_learning_rate):
+    def make_purchase_decision(self, product, customer_use_gen_ai, generative_ai_creativity, generative_ai_learning_rate, purchase_threshold):
         """
         Make a purchase decision for a given product based on various factors.
 
@@ -108,7 +110,7 @@ class CustomerAgent(mesa.Agent):
         brand = product.brand
 
         purchase_decision = False
-        product_use_gen_ai = random.random() < generative_ai_creativity
+        # product_use_gen_ai = random.random() < generative_ai_creativity
 
         # Calculate weighted factors
         # negative influence for higher price_sensitivity
@@ -121,12 +123,6 @@ class CustomerAgent(mesa.Agent):
         # The use of generative AI and customer interests can further influence this factor.
         content_factor = product_content
 
-        # Check each customer interest against the product's keywords.
-        # Increase the content factor for each matching interest, indicating higher relevance.
-        """for interest in self.interests:
-            if interest in product_keywords:
-                content_factor += 1"""
-
         content_match_count = sum(interest in product_keywords for interest in self.interests)
 
         content_matched = False
@@ -136,9 +132,9 @@ class CustomerAgent(mesa.Agent):
         # Adjust the content factor based on the use of generative AI.
         # If generative AI is used, incorporate the learning rate into the content score and apply the customer's content sensitivity.
         # Otherwise, simply apply the content sensitivity to the base product content score.
-        if customer_use_gen_ai and product_use_gen_ai:
-            content_factor = self.content_sensitivity * (content_factor + generative_ai_creativity)
-            if product_content + generative_ai_creativity > 1:
+        if customer_use_gen_ai:
+            content_factor = self.content_sensitivity * (content_factor + generative_ai_creativity * 0.5)
+            if product_content + generative_ai_creativity > 2.5:
                 content_matched = True
         else:
             content_factor = self.content_sensitivity * product_content
@@ -185,7 +181,6 @@ class CustomerAgent(mesa.Agent):
         # print(f"Total: {decision_factor}")
 
         # Make a purchase decision based on decision factor and threshold
-        purchase_threshold = 1.5
         if decision_factor > purchase_threshold:
             purchase_decision = True
 
@@ -243,9 +238,10 @@ class ProductAgent(mesa.Agent):
 
 
 class PlatformOwnerAgent(mesa.Agent):
-    def __init__(self, unique_id, model, capacity_gen_ai=None, creativity_gen_ai=None):
+    def __init__(self, unique_id, model, learning_rate_gen_ai, capacity_gen_ai, creativity_gen_ai):
         super().__init__(unique_id, model)
         # Product attributes with options for custom initialization
+        self.learning_rate_gen_ai = learning_rate_gen_ai
         self.capacity_gen_ai = capacity_gen_ai
         self.creativity_gen_ai = creativity_gen_ai
 
@@ -263,7 +259,7 @@ class SellerAgent(mesa.Agent):
 
 
 class GenerativeAI:
-    def __init__(self, model, learning_rate=None, capacity=0.5, creativity=0.5):
+    def __init__(self, model, learning_rate, capacity, creativity):
         # Initialize any necessary attributes
         self.customers_info = {}
         self.learning_rate = learning_rate
@@ -293,7 +289,7 @@ class GenerativeAI:
             product_keywords = product.keywords
             brand = product.brand
             price_score = (1 - customer.price_sensitivity) * (1 - product.price / 10)
-            quality_score = customer.quality_sensitivity * product.quality
+            # quality_score = customer.quality_sensitivity * product.quality
 
             content_factor = product.content_score + self.creativity
             # Increase content factor if product keywords match customer interests
@@ -304,7 +300,7 @@ class GenerativeAI:
 
             content_score = customer.content_sensitivity * content_factor
 
-            total_score = price_score + quality_score + content_score
+            total_score = price_score + content_score
 
             product_scores[product] = total_score
 

@@ -9,12 +9,15 @@ import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import GenAI_Customer.agent
+
 random.seed(42)
+np.random.seed(42)
 
 
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
-                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai, capacity_gen_ai, total_steps=50):
+                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai, capacity_gen_ai, total_steps,
+                 purchase_threshold):
         super().__init__()
         self.step_counter = 0
         self.total_steps = total_steps
@@ -30,6 +33,8 @@ class OnlinePlatformModel(mesa.Model):
         self.num_sold_products = 0
         self.num_sold_products_willing = 0
         self.num_sold_products_unwilling = 0
+        self.purchase_threshold = purchase_threshold
+        self.min_aic = 0
 
         self.learning_rate_gen_ai = learning_rate_gen_ai
         self.learning_rate_customer = learning_rate_customer
@@ -75,8 +80,10 @@ class OnlinePlatformModel(mesa.Model):
                 "mean_purchase_position": self.mean_purchase_position,
                 "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
                 "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
+                "creativity_gen_ai": self.get_gen_ai_creativity,
                 "AIC Linear (Sum)": lambda model: self.calculate_linear_aic(),
                 "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
+                "AIC Quadratic (Minimum)": lambda model: model.min_aic,
                 "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
                 "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
@@ -123,12 +130,15 @@ class OnlinePlatformModel(mesa.Model):
 
         # Creat platform owner
         unique_id = self.get_unique_id()
-        platform_owner = GenAI_Customer.agent.PlatformOwnerAgent(unique_id, self.capacity_gen_ai,
+        platform_owner = GenAI_Customer.agent.PlatformOwnerAgent(unique_id, self, self.learning_rate_gen_ai,
+                                                                 self.capacity_gen_ai,
                                                                  self.creativity_gen_ai)
         self.schedule.add(platform_owner)
 
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, platform_owner.capacity_gen_ai, platform_owner.creativity_gen_ai)
+        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, platform_owner.learning_rate_gen_ai,
+                                                               platform_owner.capacity_gen_ai,
+                                                               platform_owner.creativity_gen_ai)
 
         self.running = True
         self.datacollector.collect(self)
@@ -140,6 +150,9 @@ class OnlinePlatformModel(mesa.Model):
             unique_id = self.random.randint(1, 1000000)  # Adjust the range as needed
         self.used_ids.add(unique_id)
         return unique_id
+
+    def get_gen_ai_creativity(self):
+        return self.generative_ai.creativity
 
     def get_total_sales(self):
         return self.total_sales
@@ -247,11 +260,13 @@ class OnlinePlatformModel(mesa.Model):
         """Process purchases for each customer."""
         # Get all product agents or use default recommendations if provided
         product_agents = default_content if default_content is not None else self.get_product_agents()
-        random.shuffle(product_agents)
+        # random.shuffle(product_agents)
+        # Sort the product_agents list by the unique_id attribute of each ProductAgent
+        sorted_product_agents = sorted(product_agents, key=lambda x: x.unique_id)
 
         # for product in product_agents:
         # update products price and discount randomly in each simulation
-            # product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
+        # product.price = max(0, product.price + 0.5 * random.uniform(-1, 1))
 
         customer_agents = self.get_customer_agents()
 
@@ -261,30 +276,41 @@ class OnlinePlatformModel(mesa.Model):
         # Randomly select a subset of customers for generative AI enhancements
         customers_gen_ai = random.sample(customer_agents, num_customers_gen_ai)
 
+        self.total_sales = 0
+        self.num_sold_products = 0
+        self.sales_willing = 0
+        self.sales_unwilling = 0
+        self.num_sold_products_willing = 0
+        self.num_sold_products_unwilling = 0
+
         for customer in customer_agents:
             products_purchased = 0  # Track the amount of purchased products
             total_purchase_position = 0  # Sum of orders of all purchased products
-            num_content_matched = 0
+            number_content_matched = 0
 
             # Determine if this customer is selected for generative AI enhancements
             use_gen_ai = customer in customers_gen_ai
 
-            if use_gen_ai and customer.willing_to_share_info:
+            """if use_gen_ai and customer.willing_to_share_info:
                 # Generate personalized products to consider
                 products_to_consider = self.generative_ai.generate_personalized_content(customer, product_agents)
             else:
                 # Use the default list of products
-                products_to_consider = product_agents
+                products_to_consider = product_agents"""
+
+            products_to_consider = sorted_product_agents
 
             num_products_to_consider = int(len(products_to_consider) * 0.8)
 
             for index, product in enumerate(products_to_consider[:num_products_to_consider]):
-                if products_purchased >= 5:
-                    # If the consumer has purchased 5 items, stop purchasing
+                if products_purchased >= 6:
+                    # If the consumer has purchased 6 items, stop purchasing
                     break
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
-                decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai, self.generative_ai.creativity, self.generative_ai.learning_rate)
+                decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
+                                                           self.creativity_gen_ai, self.learning_rate_gen_ai,
+                                                           self.purchase_threshold)
                 customer.make_comment(product)
 
                 # Collect purchase decision data
@@ -305,12 +331,12 @@ class OnlinePlatformModel(mesa.Model):
                 self.purchase_decisions.append(decision_info)
 
                 if decision['purchase_decision']:
-                    if product.unique_id == 1008610086:
+                    """if product.unique_id == 1008610086:
                         self.generative_ai.creativity += self.generative_ai.learning_rate * 0.5
-                        self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))
+                        self.generative_ai.creativity = max(1, min(self.generative_ai.creativity, 10))"""
 
                     if decision['content_matched']:
-                        num_content_matched += 1
+                        number_content_matched += 1
 
                     products_purchased += 1
                     total_purchase_position += index
@@ -324,18 +350,28 @@ class OnlinePlatformModel(mesa.Model):
                         self.num_sold_products_unwilling += 1
                     update_seller_ratings_based_on_purchase(product, index)
 
-                if not decision['purchase_decision'] and product.unique_id == 1008610086:
+                """if not decision['purchase_decision'] and product.unique_id == 1008610086:
                     self.generative_ai.creativity -= self.generative_ai.learning_rate * 0.1
-                    self.generative_ai.creativity = max(0.1, min(self.generative_ai.creativity, 10))
+                    self.generative_ai.creativity = max(0.1, min(self.generative_ai.creativity, 10))"""
 
             # Calculate the average order of purchased products if any products were purchased
             if products_purchased > 0:
                 customer.mean_purchase_position = total_purchase_position / products_purchased
             else:
-                customer.mean_purchase_position = None
+                customer.mean_purchase_position = num_products_to_consider
+
+            customer.num_content_matched = number_content_matched
 
             # Update customer satisfaction
-            update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position, num_content_matched)
+            update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position,
+                                         number_content_matched)
+
+        if random.random() < 0.5:
+            self.generative_ai.creativity += (self.learning_rate_gen_ai * 0.8)
+            self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 5))
+        else:
+            self.generative_ai.creativity -= (self.learning_rate_gen_ai * 0.1)
+            self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 5))
 
     def export_purchase_decisions_to_csv(self, filename):
         """Exports purchase decision data to a CSV file."""
@@ -456,7 +492,8 @@ class OnlinePlatformModel(mesa.Model):
             'avg_content': [],
             'satisfaction': [],
             'willing_to_share': [],
-            'customer_id': []
+            'customer_id': [],
+            'mean_purchase_position': []
         }
 
         if willing_to_share is None:
@@ -478,6 +515,8 @@ class OnlinePlatformModel(mesa.Model):
                 data['willing_to_share'].append(willing_to_share_info)
                 data['satisfaction'].append(max(0, min(1, satisfaction)))
                 data['customer_id'].append(customer.unique_id)
+                # data['num_content_matched'].append(customer.num_content_matched)
+                data['mean_purchase_position'].append(customer.mean_purchase_position)
 
         df = pd.DataFrame(data)
 
@@ -485,9 +524,10 @@ class OnlinePlatformModel(mesa.Model):
             # print("No data available for AIC calculation.")
             return None
 
-        X = df[['avg_price', 'avg_quality', 'avg_content']]
+        X = df[['avg_price', 'avg_quality', 'avg_content', 'mean_purchase_position']]
         for degree in range(2, max_degree + 1):
-            X = np.column_stack((X, df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share']] ** degree))
+            X = np.column_stack((X, df[
+                ['avg_price', 'avg_quality', 'avg_content', 'willing_to_share', 'mean_purchase_position']] ** degree))
 
         X = sm.add_constant(X)
         model = sm.OLS(df['satisfaction'], X).fit()
@@ -495,7 +535,12 @@ class OnlinePlatformModel(mesa.Model):
         """if willing_to_share is None and max_degree == 4:
             print(model.summary())"""
 
-        return model.aic
+        aic = model.aic
+
+        if aic < self.min_aic:
+            self.min_aic = aic
+
+        return aic
 
     def step(self):
         # Increment step counter
@@ -534,7 +579,8 @@ class OnlinePlatformModel(mesa.Model):
         self.export_data_if_final_step()
 
 
-def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product, num_content_matched):
+def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product,
+                                 num_content_matched):
     """
     Update the customer's satisfaction based on the number of products purchased and the average order of purchased products.
 
@@ -560,26 +606,26 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
         customer_agent.satisfaction -= 0.05
 
     # Update the customer's satisfaction based on the number of interest matched products
-    if num_content_matched >= 3:
+    if num_content_matched >= 5:
         customer_agent.satisfaction += 0.1
-    elif num_content_matched >= 2:
+    elif num_content_matched >= 3:
         customer_agent.satisfaction += 0.05
     elif num_content_matched == 1:
         customer_agent.satisfaction += 0.03
 
     # Additional logic based on average order of purchased products
     if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= 10:
+        if average_order_of_purchased_product <= 15:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= 20:
+        elif average_order_of_purchased_product <= 30:
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.05
         else:
             # Negative feedback for higher average order values
             customer_agent.satisfaction -= 0.03
 
-    customer_agent.satisfaction = max(0, min(1, customer_agent.satisfaction))
+    customer_agent.satisfaction = max(0, min(5, customer_agent.satisfaction))
 
 
 def update_seller_ratings_based_on_purchase(product_agent, order_of_purchased_product):
@@ -642,7 +688,7 @@ def update_seller_ratings_based_on_product(product_agent):
     # product_agent.seller.rating = max(0, min(product_agent.seller.rating, 1))
 
 
-def run_and_export_combined_data_test(model_class, params_ranges, export_filename):
+def run_and_export_combined_data(model_class, params_ranges, export_filename):
     # Generate all combinations of parameter values
     param_names = sorted(params_ranges)
     combinations = list(itertools.product(*(params_ranges[name] for name in param_names)))
@@ -652,37 +698,22 @@ def run_and_export_combined_data_test(model_class, params_ranges, export_filenam
 
     # Iterate over each combination using tqdm for the progress bar
     for params_tuple in tqdm(combinations, desc="Running simulations"):
-        condition_met = False
-        while not condition_met:
-            params = dict(zip(param_names, params_tuple))
+        params = dict(zip(param_names, params_tuple))
 
-            # Initialize and run the model
-            model = model_class(**params)
-            for _ in range(model.total_steps):
-                model.step()
+        # Initialize and run the model
+        model = model_class(**params)
+        for _ in range(model.total_steps):
+            model.step()
 
-            # Collect model parameters and the latest DataCollector data
-            model_parameters_df = pd.DataFrame([params])
-            collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
+        # Collect model parameters and the latest DataCollector data
+        model_parameters_df = pd.DataFrame([params])
+        collected_data_df = model.datacollector.get_model_vars_dataframe().iloc[-1:]
 
-            # Check if conditions are met
-            aic_quartic_willing = collected_data_df['AIC Quartic (Willing)'].iloc[0]
-            aic_quartic_unwilling = collected_data_df['AIC Quartic (Unwilling)'].iloc[0]
-            avg_satisfaction_willing = collected_data_df['Avg Satisfaction (Willing)'].iloc[0]
-            avg_satisfaction_unwilling = collected_data_df['Avg Satisfaction (Unwilling)'].iloc[0]
+        # Merge the data
+        combined_df = pd.concat([model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)], axis=1)
 
-            if aic_quartic_willing < aic_quartic_unwilling and avg_satisfaction_willing > avg_satisfaction_unwilling:
-                condition_met = True
-
-                # Merge the data
-                combined_df = pd.concat(
-                    [model_parameters_df.reset_index(drop=True), collected_data_df.reset_index(drop=True)],
-                    axis=1)
-
-                # Append the combined data to the overall DataFrame
-                all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
-            else:
-                print("Rerunning simulation due to condition not met.")
+        # Append the combined data to the overall DataFrame
+        all_data_df = pd.concat([all_data_df, combined_df], ignore_index=True)
 
     # Export the combined data to a CSV file
     all_data_df.to_csv(export_filename, index=False)
@@ -698,34 +729,56 @@ def run_simulation_with_params(model_class, params):
 
 
 def compare_and_rerun_if_needed(model_class, params, all_data_df):
-    """比较两次运行的结果并根据条件决定是否重新运行"""
-    # 用给定参数分别运行percentage_willing_to_share_info为0和1的模拟
+    """
+    Compares results of two simulation runs with different 'percentage_willing_to_share_info' settings,
+    and decides whether to rerun the simulations based on certain conditions.
+
+    Parameters:
+    - model_class: The simulation model class.
+    - params: Dictionary of parameters used for the simulation.
+    - all_data_df: DataFrame containing results from all simulations.
+
+    Returns:
+    - Updated DataFrame with new simulation results if conditions for rerunning are not met.
+    """
+    # Copy parameters and set 'percentage_willing_to_share_info' to 0 for the first run
     params_zero = params.copy()
     params_zero['percentage_willing_to_share_info'] = 0
     result_zero = run_simulation_with_params(model_class, params_zero)
 
+    # Copy parameters and set 'percentage_willing_to_share_info' to 1 for the second run
     params_one = params.copy()
     params_one['percentage_willing_to_share_info'] = 1
     result_one = run_simulation_with_params(model_class, params_one)
 
-    # 比较结果
+    # Extract AIC Quartic (Sum) and Average Satisfaction values for both runs
     aic_quartic_sum_zero = result_zero['AIC Quartic (Sum)'].values[0]
     aic_quartic_sum_one = result_one['AIC Quartic (Sum)'].values[0]
     avg_satisfaction_zero = result_zero['Average Satisfaction'].values[0]
     avg_satisfaction_one = result_one['Average Satisfaction'].values[0]
 
-    if aic_quartic_sum_one >= aic_quartic_sum_zero or avg_satisfaction_one <= avg_satisfaction_zero:
-        # 如果满足条件，重新运行模拟
-        print("Rerunning simulation due to condition not met.")
+    # List to store reasons for rerunning the simulations
+    rerun_reasons = []
+    # Check conditions and add reasons for rerunning if conditions are met
+    if aic_quartic_sum_one >= aic_quartic_sum_zero:
+        rerun_reasons.append("AIC Quartic (Sum) for willing is not less than for unwilling.")
+    if avg_satisfaction_one <= avg_satisfaction_zero:
+        rerun_reasons.append("Average Satisfaction for willing is not greater than for unwilling.")
+    if aic_quartic_sum_one < -3000:
+        rerun_reasons.append("AIC Quartic (Sum) for willing is less than -3000.")
+
+    # Rerun simulations if any conditions are met
+    if rerun_reasons:
+        print("Rerunning simulation due to conditions not met:", "; ".join(rerun_reasons))
         return compare_and_rerun_if_needed(model_class, params, all_data_df)
     else:
-        # 如果不满足条件，将结果添加到all_data_df中
+        # Add results to all_data_df if no conditions for rerunning are met
         all_data_df = pd.concat([all_data_df, result_zero.assign(**params_zero)], ignore_index=True)
         all_data_df = pd.concat([all_data_df, result_one.assign(**params_one)], ignore_index=True)
     return all_data_df
 
 
-def run_and_export_combined_data(model_class, params_ranges, export_filename):
+def run_and_export_combined_data_test(model_class, params_ranges, export_filename):
     param_names = sorted([name for name in params_ranges if name != 'percentage_willing_to_share_info'])
     combinations = list(itertools.product(*(params_ranges[name] for name in param_names)))
     all_data_df = pd.DataFrame()
@@ -739,28 +792,46 @@ def run_and_export_combined_data(model_class, params_ranges, export_filename):
 
 
 # Specified parameter ranges
-"""params_ranges = {
-    'num_customers': [40, 80, 100],
-    'percentage_willing_to_share_info': [0, 1],
-    'num_products': [60, 100, 150],
-    'num_retailers': [10, 20],
-    'learning_rate_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'learning_rate_customer': [0.3],
-    'capacity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'creativity_gen_ai': [0.1, 0.3, 0.5, 0.7, 0.9],
-    'total_steps': [50],
-}"""
 
-params_ranges = {
+"""params_ranges = {
     'num_customers': [80, 100],
     'num_products': [60, 100],
     'num_retailers': [20],
-    'learning_rate_gen_ai': [0.3, 0.6, 0.9],
+    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
     'learning_rate_customer': [0.3],
-    'capacity_gen_ai': [0.3, 0.6, 0.9],
-    'creativity_gen_ai': [0.3, 0.6, 0.9],
+    'capacity_gen_ai': [0.1, 0.5, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
     'total_steps': [50],
     'percentage_willing_to_share_info': [0, 1],
+    'purchase_threshold': [1.5]
+    'learning_rate_gen_ai': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95],
+
+}"""
+
+"""params_ranges = {
+    'num_customers': [100],
+    'num_products': [100],
+    'num_retailers': [20],
+    'learning_rate_gen_ai': [0, 0.3, 0.6],
+    'learning_rate_customer': [0.3],
+    'capacity_gen_ai': [0, 0.3, 0.6, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
+    'total_steps': [40],
+    'percentage_willing_to_share_info': [1],
+    'purchase_threshold': [1.5]
+}"""
+
+params_ranges = {
+    'num_customers': [100],
+    'num_products': [100],
+    'num_retailers': [20, 20, 20, 20, 20, 20, 20, 20, 20, 20],
+    'learning_rate_gen_ai': [0, 0.4, 0.8],
+    'learning_rate_customer': [0.3],
+    'capacity_gen_ai': [0, 0.3, 0.6, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
+    'total_steps': [40],
+    'percentage_willing_to_share_info': [1],
+    'purchase_threshold': [1.5]
 }
 
 run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
