@@ -106,7 +106,6 @@ class CustomerAgent(mesa.Agent):
         product_price = product.price
         product_quality = product.quality
         product_content = product.content_score
-        product_keywords = product.keywords
         brand = product.brand
 
         purchase_decision = False
@@ -123,11 +122,7 @@ class CustomerAgent(mesa.Agent):
         # The use of generative AI and customer interests can further influence this factor.
         content_factor = product_content
 
-        content_match_count = sum(interest in product_keywords for interest in self.interests)
-
         content_matched = False
-        """if content_match_count > 0:
-            content_matched = True"""
 
         # Adjust the content factor based on the use of generative AI.
         # If generative AI is used, incorporate the learning rate into the content score and apply the customer's content sensitivity.
@@ -197,7 +192,6 @@ class CustomerAgent(mesa.Agent):
             'generative_ai_learning_rate': generative_ai_learning_rate,
             'content_matched': content_matched
         }
-
         return decision_info
 
     def make_comment(self, product):
@@ -263,7 +257,6 @@ class GenerativeAI:
         # Initialize any necessary attributes
         self.customers_info = {}
         self.learning_rate = learning_rate
-        self.product_popularity = {}
         self.model = model
         self.capacity = capacity
         self.creativity = creativity
@@ -278,81 +271,3 @@ class GenerativeAI:
 
         basic_content = shuffled_agents
         return basic_content
-
-    def generate_personalized_content(self, customer, products):
-        """Provide personalized production content on customer sensitivities."""
-        # Initialize a dictionary to store product scores
-        product_scores = {}
-
-        # Iterate through each product and calculate scores based on customer sensitivities
-        for product in products:
-            product_keywords = product.keywords
-            brand = product.brand
-            price_score = (1 - customer.price_sensitivity) * (1 - product.price / 10)
-            # quality_score = customer.quality_sensitivity * product.quality
-
-            content_factor = product.content_score + self.creativity
-            # Increase content factor if product keywords match customer interests
-            for interest in customer.interests:
-                if interest in product_keywords:
-                    # print(f"Customer is interested in this product")
-                    content_factor += 0.5
-
-            content_score = customer.content_sensitivity * content_factor
-
-            total_score = price_score + content_score
-
-            product_scores[product] = total_score
-
-        # Find the product that gives the highest total_score for this customer
-        best_product = max(product_scores, key=product_scores.get)
-
-        # Extract the best attributes and modify slightly to create a new product content
-        new_product_attributes = {
-            'price': best_product.price,
-            'quality': best_product.quality,
-            'content': best_product.content_score,
-            'keywords': best_product.keywords,
-            'brand': initialize_brand()
-        }
-
-        new_product = self.generate_new_product(new_product_attributes)
-
-        # Randomly select a retailer for the new product
-        retailer = random.choice(
-            [agent for agent in self.model.schedule.agents if isinstance(agent, GenAI_Customer.agent.SellerAgent)])
-        new_product.seller = retailer
-        retailer.products.append(new_product)
-
-        # Add new product to products list
-        products.append(new_product)
-
-        content = products
-
-        return content
-
-    def learn_from_customer_interactions(self, customers_feedback):
-        # Learn from customer feedback and update algorithms
-        for customer_id, feedback in customers_feedback.items():
-            # Process and learn from feedback
-            # For example, update product popularity based on feedback
-            for product_id in feedback.get('purchased', []):
-                self.product_popularity[product_id] = self.product_popularity.get(product_id, 0) + self.learning_rate
-
-    def generate_new_product(self, best_attributes):
-        """
-        Generate a new product based on the best attributes for a customer.
-        """
-        new_product = ProductAgent(
-            unique_id=1008610086,
-            model=self.model,
-            price=max(best_attributes['price'] - 10 * self.learning_rate, 0),
-            quality=min(best_attributes['quality'] + self.learning_rate, 1),
-            content=min(best_attributes['content'] + self.learning_rate, 1),
-            keywords=best_attributes['keywords']
-        )
-
-        # print(new_product.unique_id)
-
-        # Set attributes for the new product based on customer data and trends
-        return new_product
