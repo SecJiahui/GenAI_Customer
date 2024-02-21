@@ -3,8 +3,8 @@ import random
 from enum import Enum
 import numpy as np
 import GenAI_Customer
-random.seed(42)
-np.random.seed(42)
+# random.seed(42)
+# np.random.seed(42)
 
 
 class State(Enum):
