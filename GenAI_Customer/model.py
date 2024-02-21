@@ -43,7 +43,7 @@ class OnlinePlatformModel(mesa.Model):
         self.learning_rate_gen_ai = learning_rate_gen_ai if capacity_gen_ai != 0 else 0
         self.learning_rate_customer = learning_rate_customer
         self.capacity_gen_ai = capacity_gen_ai
-        self.creativity_gen_ai = creativity_gen_ai + learning_rate_gen_ai if capacity_gen_ai != 0 else 0
+        self.creativity_gen_ai = creativity_gen_ai if capacity_gen_ai != 0 else 0
 
         self.G = nx.erdos_renyi_graph(n=self.num_customers, p=0.5)
         self.grid = mesa.space.NetworkGrid(self.G)
@@ -86,9 +86,9 @@ class OnlinePlatformModel(mesa.Model):
                 # "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
                 # "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
                 "creativity_gen_ai": self.get_gen_ai_creativity,
-                # "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
-                # "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
-                # "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
+                "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
+                "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
+                "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
                 "AIC Quartic (Minimum)": lambda model: model.min_aic,
                 # "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
@@ -307,7 +307,7 @@ class OnlinePlatformModel(mesa.Model):
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
                 decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
-                                                           self.creativity_gen_ai, self.learning_rate_gen_ai,
+                                                           self.generative_ai.creativity, self.learning_rate_gen_ai,
                                                            self.purchase_threshold)
                 customer.make_comment(product)
 
@@ -327,6 +327,9 @@ class OnlinePlatformModel(mesa.Model):
                     "product_content": product.content_score
                 }
                 self.purchase_decisions.append(decision_info)
+                if len(self.purchase_decisions) > 1000:
+                    # keep last 1000 purchase decisions
+                    self.purchase_decisions = self.purchase_decisions[-1000:]
 
                 if decision['purchase_decision']:
 
@@ -357,18 +360,14 @@ class OnlinePlatformModel(mesa.Model):
             update_customer_satisfaction(customer, products_purchased, customer.mean_purchase_position,
                                          number_content_matched, len(products_to_consider))
 
+    def update_gen_ai_creativity(self):
+
         current_avg_satisfaction = self.get_average_satisfaction()
 
-        """if current_avg_satisfaction > self.avg_customer_satisfaction:
-            self.generative_ai.creativity += self.learning_rate_gen_ai
-            self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 2))
-        else:
-            self.generative_ai.creativity -= (self.learning_rate_gen_ai * 0.2)
-            self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 2))"""
-
-        """self.generative_ai.creativity += self.learning_rate_gen_ai * (
-                    current_avg_satisfaction - self.avg_customer_satisfaction)/current_avg_satisfaction
-        self.generative_ai.creativity = max(0, self.creativity_gen_ai + self.learning_rate_gen_ai)"""
+        self.generative_ai.creativity += self.learning_rate_gen_ai * (
+                current_avg_satisfaction - self.avg_customer_satisfaction)/current_avg_satisfaction
+        self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 2))
+        # self.generative_ai.creativity = max(0, self.creativity_gen_ai + self.learning_rate_gen_ai)
 
         self.avg_customer_satisfaction = current_avg_satisfaction
 
@@ -468,6 +467,7 @@ class OnlinePlatformModel(mesa.Model):
         # F: Customers purchase on e-commerce platforms and provide feedback
         # Simulate customers purchasing products and providing feedback
         if self.step_counter == 1:
+            self.avg_customer_satisfaction = self.get_average_satisfaction()
             self.process_customer_purchases(default_content=content)
         else:
             self.process_customer_purchases(default_content=None)
@@ -477,7 +477,9 @@ class OnlinePlatformModel(mesa.Model):
         for product in product_agents:
             update_seller_ratings_based_on_product(product)
 
-        # H: Generative AI learns from customer interactions, updating algorithms to improve future content (done)
+
+        # H: Generative AI learns from customer interactions, updating algorithms to improve future content
+        self.update_gen_ai_creativity()
 
         # Advance the model's time step
         self.schedule.step()
@@ -701,7 +703,21 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
 
 
 # Specified parameter ranges
-params_ranges = {
+"""params_ranges = {
+    'num_customers': [50, 80, 100, 150],
+    'num_products': [50, 80, 100, 150],
+    'num_retailers': [10, 20, 30, 40],
+    'learning_rate_gen_ai': [0],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                               25, 26, 27, 28, 29, 30],
+    'capacity_gen_ai': [0],
+    'creativity_gen_ai': [0],
+    'total_steps': [1000],
+    'percentage_willing_to_share_info': [1],
+    'purchase_threshold': [1.5]
+}"""
+
+"""params_ranges = {
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [20],
@@ -712,41 +728,26 @@ params_ranges = {
     'total_steps': [70],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
-}
+}"""
 
-"""params_ranges = {
+params_ranges = {
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [20],
-    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    'capacity_gen_ai': [0.1, 0.5, 0.9],
-    'creativity_gen_ai': [0.1, 0.5, 0.9],
+    'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    'capacity_gen_ai': [0.9],
+    'creativity_gen_ai': [0.3, 0.7],
     'total_steps': [70],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
-}"""
-
-"""params_ranges = {
-    'num_customers': [50, 80, 100],
-    'num_products': [50, 80, 100],
-    'num_retailers': [10, 20, 30],
-    'learning_rate_gen_ai': [0],
-    'learning_rate_customer': [0.3],
-    'capacity_gen_ai': [0],
-    'creativity_gen_ai': [0],
-    'total_steps': [40, 40],
-    'percentage_willing_to_share_info': [1],
-    'purchase_threshold': [1.5]
 }
-"""
 
 
 def main():
     # Assuming your model class is defined elsewhere and imported
-    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv',
-                                       batch_size=15, num_cores=15)
-    # run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
+    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv', batch_size=15, num_cores=15)
+    #run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
 
 
 if __name__ == '__main__':
