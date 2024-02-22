@@ -366,7 +366,7 @@ class OnlinePlatformModel(mesa.Model):
 
         self.generative_ai.creativity += self.learning_rate_gen_ai * (
                 current_avg_satisfaction - self.avg_customer_satisfaction)/current_avg_satisfaction
-        self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 2))
+        self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 3))
         # self.generative_ai.creativity = max(0, self.creativity_gen_ai + self.learning_rate_gen_ai)
 
         self.avg_customer_satisfaction = current_avg_satisfaction
@@ -510,7 +510,7 @@ class OnlinePlatformModel(mesa.Model):
         # Append the combined data to self.simulation_info
         self.simulation_info.append(combined_data)
 
-        # self.export_data_if_final_step()
+        self.export_data_if_final_step()
 
 
 def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product,
@@ -717,7 +717,7 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
     'purchase_threshold': [1.5]
 }"""
 
-"""params_ranges = {
+params_ranges = {
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [20],
@@ -725,28 +725,28 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
     'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
     'capacity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'total_steps': [70],
-    'percentage_willing_to_share_info': [1],
-    'purchase_threshold': [1.5]
-}"""
-
-params_ranges = {
-    'num_customers': [100],
-    'num_products': [100],
-    'num_retailers': [20],
-    'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-    'capacity_gen_ai': [0.9],
-    'creativity_gen_ai': [0.3, 0.7],
-    'total_steps': [70],
+    'total_steps': [100],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
 }
 
+"""params_ranges = {
+    'num_customers': [100],
+    'num_products': [100],
+    'num_retailers': [20],
+    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+    'capacity_gen_ai': [0.1, 0.5, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
+    'total_steps': [100],
+    'percentage_willing_to_share_info': [1],
+    'purchase_threshold': [1.5]
+}"""
+
 
 def main():
     # Assuming your model class is defined elsewhere and imported
-    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv', batch_size=15, num_cores=15)
+    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv', batch_size=10, num_cores=10)
     #run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
 
 
