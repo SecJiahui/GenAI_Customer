@@ -58,12 +58,14 @@ class CustomerAgent(mesa.Agent):
         self.shopping_amount = 0
         self.interests = initialize_interests()  # initialize interest
         self.willing_to_share_info = willing_to_share  # customer agree to share their information
+        self.last_satisfaction = 0
         self.satisfaction = random.uniform(0.3, 0.7)
         self.price_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.quality_sensitivity = np.random.beta(5, 2)  # Beta distribution, tends to lower quality sensitivity
         self.content_sensitivity = np.random.beta(2, 5)  # Beta distribution, tends to higher price sensitivity
         self.brand_loyalty = np.random.beta(2, 2)  # Beta distribution, balanced brand loyalty
         self.mean_purchase_position = None
+        self.mean_viewed_comments = 0
         self.state = self.get_satisfaction_level()
         self.num_content_matched = 0
 
@@ -164,8 +166,11 @@ class CustomerAgent(mesa.Agent):
             # No comments available for the product
             sampled_comments = []
 
+        num_viewed_comments = 0
+
         # Adjust the decision factor based on the comments
         for customer_id, comment in sampled_comments:
+            num_viewed_comments += 1
             if comment >= 4:  # Positive ratings
                 decision_factor += 0.1
             elif comment <= 2:  # Negative ratings
@@ -174,7 +179,6 @@ class CustomerAgent(mesa.Agent):
             self.review_history.append((customer_id, comment))
 
         # print(f"Total: {decision_factor}")
-
         # Make a purchase decision based on decision factor and threshold
         if decision_factor > purchase_threshold:
             purchase_decision = True
@@ -187,6 +191,7 @@ class CustomerAgent(mesa.Agent):
             print(f"Purchase Decision: False")"""
 
         decision_info = {
+            'len_sampled_comments': num_viewed_comments,
             'purchase_decision': purchase_decision,
             'decision_factor': decision_factor,
             'generative_ai_learning_rate': generative_ai_learning_rate,
@@ -253,13 +258,35 @@ class SellerAgent(mesa.Agent):
 
 
 class GenerativeAI:
-    def __init__(self, model, learning_rate, capacity, creativity):
-        # Initialize any necessary attributes
+    def __init__(self, model, learning_rate, capacity):
+        # Initialize necessary attributes
         self.customers_info = {}
         self.learning_rate = learning_rate
         self.model = model
         self.capacity = capacity
-        self.creativity = creativity
+        # Use a dictionary for creativity with customer ID as key
+        self.creativity = {}  # Initialize an empty dict
+
+    def initialize_gen_ai_creativity(self, creativity, customers):
+        for customer in customers:
+            if customer.unique_id not in self.creativity:
+                # If customer is not in the creativity dict, initialize their creativity
+                self.creativity[customer.unique_id] = creativity
+
+    def update_gen_ai_creativity(self, customers):
+        for customer in customers:
+            # Calculate the change in creativity based on satisfaction change
+            creativity_change = self.learning_rate * (
+                    customer.satisfaction - customer.last_satisfaction) / max(0.01, customer.satisfaction)
+
+            # Update the creativity for this specific customer
+            new_creativity = self.creativity[customer.unique_id] + creativity_change
+
+            # Ensure the new creativity value is between 0 and 3
+            self.creativity[customer.unique_id] = max(0, min(new_creativity, 3))
+
+            # Update the customer's last satisfaction
+            customer.last_satisfaction = customer.satisfaction
 
     def generate_basic_content(self, product_agents):
         """

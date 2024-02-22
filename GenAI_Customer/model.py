@@ -82,6 +82,7 @@ class OnlinePlatformModel(mesa.Model):
                 "Willing to Share Customers": self.count_willing_to_share_customers,
                 "Unwilling to Share Customers": self.count_unwilling_to_share_customers,
                 "Number of Products": self.count_products,
+                "mean_viewed_comments": self.get_average_viewed_comments,
                 "mean_purchase_position": self.mean_purchase_position,
                 # "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
                 # "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
@@ -142,8 +143,8 @@ class OnlinePlatformModel(mesa.Model):
 
         # Create Generative AI
         self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, platform_owner.learning_rate_gen_ai,
-                                                               platform_owner.capacity_gen_ai,
-                                                               platform_owner.creativity_gen_ai)
+                                                               platform_owner.capacity_gen_ai)
+        self.generative_ai.initialize_gen_ai_creativity(platform_owner.creativity_gen_ai, self.get_customer_agents())
 
         self.running = True
         self.datacollector.collect(self)
@@ -157,7 +158,11 @@ class OnlinePlatformModel(mesa.Model):
         return unique_id
 
     def get_gen_ai_creativity(self):
-        return self.generative_ai.creativity
+        if self.generative_ai.creativity:
+            average_creativity = sum(self.generative_ai.creativity.values()) / len(self.generative_ai.creativity)
+            return average_creativity
+        else:
+            return 0
 
     def get_total_sales(self):
         return self.total_sales
@@ -187,6 +192,18 @@ class OnlinePlatformModel(mesa.Model):
         satisfaction_values = [customer_agent.satisfaction for customer_agent in self.schedule.agents
                                if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent)]
         return np.mean(satisfaction_values) if satisfaction_values else 0
+
+    def get_average_viewed_comments(self):
+        """Calculate average customer satisfaction."""
+        viewed_comments = [customer_agent.mean_viewed_comments for customer_agent in self.schedule.agents
+                           if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent)]
+        return np.mean(viewed_comments) if viewed_comments else 0
+
+    def get_average_rating(self):
+        """Calculate average seller rating."""
+        rating_values = [seller_agent.rating for seller_agent in self.schedule.agents
+                         if isinstance(seller_agent, GenAI_Customer.agent.SellerAgent)]
+        return np.mean(rating_values) if rating_values else 0
 
     def average_satisfaction_willing_to_share(self):
         """Calculate average satisfaction for customers willing to share information."""
@@ -307,7 +324,7 @@ class OnlinePlatformModel(mesa.Model):
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
                 decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
-                                                           self.generative_ai.creativity, self.learning_rate_gen_ai,
+                                                           self.generative_ai.creativity[customer.unique_id], self.learning_rate_gen_ai,
                                                            self.purchase_threshold)
                 customer.make_comment(product)
 
@@ -321,18 +338,21 @@ class OnlinePlatformModel(mesa.Model):
                     'decision_factor': decision['decision_factor'],
                     'generative_ai_learning_rate': decision['generative_ai_learning_rate'],
                     'content_matched': decision['content_matched'],
+                    'len_sampled_comments': decision['len_sampled_comments'],
                     "product_id": product.unique_id,
                     "product_price": product.price,
                     "product_quality": product.quality,
                     "product_content": product.content_score
                 }
                 self.purchase_decisions.append(decision_info)
+
+                customer.mean_viewed_comments = decision['len_sampled_comments']
+
                 if len(self.purchase_decisions) > 1000:
                     # keep last 1000 purchase decisions
                     self.purchase_decisions = self.purchase_decisions[-1000:]
 
                 if decision['purchase_decision']:
-
                     if decision['content_matched']:
                         number_content_matched += 1
 
@@ -365,7 +385,7 @@ class OnlinePlatformModel(mesa.Model):
         current_avg_satisfaction = self.get_average_satisfaction()
 
         self.generative_ai.creativity += self.learning_rate_gen_ai * (
-                current_avg_satisfaction - self.avg_customer_satisfaction)/current_avg_satisfaction
+                current_avg_satisfaction - self.avg_customer_satisfaction) / current_avg_satisfaction
         self.generative_ai.creativity = max(0, min(self.generative_ai.creativity, 3))
         # self.generative_ai.creativity = max(0, self.creativity_gen_ai + self.learning_rate_gen_ai)
 
@@ -388,7 +408,7 @@ class OnlinePlatformModel(mesa.Model):
             self.export_simulation_data_to_csv("simulation.csv")
             print("purchase decisions exported")
 
-    def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
+    def calculate_polynomial_aic_test(self, max_degree, willing_to_share=None):
         """
         Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
 
@@ -404,7 +424,8 @@ class OnlinePlatformModel(mesa.Model):
             'satisfaction': [],
             'willing_to_share': [],
             'customer_id': [],
-            'mean_purchase_position': []
+            'mean_purchase_position': [],
+            'mean_viewed_comments': []
         }
 
         if willing_to_share is None:
@@ -428,6 +449,72 @@ class OnlinePlatformModel(mesa.Model):
                 data['customer_id'].append(customer.unique_id)
                 # data['num_content_matched'].append(customer.num_content_matched)
                 data['mean_purchase_position'].append(customer.mean_purchase_position)
+                data['mean_viewed_comments'].append(customer.mean_viewed_comments)
+
+        df = pd.DataFrame(data)
+
+        if df.empty:
+            # print("No data available for AIC calculation.")
+            return None
+
+        X = df[['avg_price', 'avg_quality', 'avg_content', 'mean_purchase_position', 'mean_viewed_comments']]
+        for degree in range(2, max_degree + 1):
+            X = np.column_stack((X, df[
+                ['avg_price', 'avg_quality', 'avg_content', 'willing_to_share', 'mean_purchase_position',
+                 'mean_viewed_comments']] ** degree))
+
+        X = sm.add_constant(X)
+        model = sm.OLS(df['satisfaction'], X).fit()
+
+        aic = model.aic
+
+        if aic < self.min_aic:
+            self.min_aic = aic
+
+        return aic
+
+    def calculate_polynomial_aic(self, max_degree, willing_to_share=None):
+        """
+        Calculate the AIC for a customer satisfaction model based on product attributes using a quadratic model.
+
+        AIC = -2 ln(L) + 2k
+
+        Returns:
+        AIC value
+        """
+        data = {
+            'avg_price': [],
+            'avg_quality': [],
+            'avg_content': [],
+            'satisfaction': [],
+            'willing_to_share': [],
+            'customer_id': [],
+            'mean_purchase_position': [],
+            'mean_viewed_comments': []
+        }
+
+        if willing_to_share is None:
+            customers = self.get_customer_agents()
+        else:
+            customers = self.get_customer_agents_willing() if willing_to_share else self.get_customer_agents_unwilling()
+
+        for customer in customers:
+            if customer.shopping_history:
+                avg_price = np.mean([product.price for product in customer.shopping_history])
+                avg_quality = np.mean([product.quality for product in customer.shopping_history])
+                avg_content = np.mean([product.content_score for product in customer.shopping_history])
+                willing_to_share_info = int(customer.willing_to_share_info)
+                satisfaction = customer.satisfaction
+
+                data['avg_price'].append(avg_price)
+                data['avg_quality'].append(avg_quality)
+                data['avg_content'].append(avg_content)
+                data['willing_to_share'].append(willing_to_share_info)
+                data['satisfaction'].append(max(0, min(1, satisfaction)))
+                data['customer_id'].append(customer.unique_id)
+                # data['num_content_matched'].append(customer.num_content_matched)
+                data['mean_purchase_position'].append(customer.mean_purchase_position)
+                data['mean_viewed_comments'].append(customer.mean_viewed_comments)
 
         df = pd.DataFrame(data)
 
@@ -477,9 +564,8 @@ class OnlinePlatformModel(mesa.Model):
         for product in product_agents:
             update_seller_ratings_based_on_product(product)
 
-
         # H: Generative AI learns from customer interactions, updating algorithms to improve future content
-        self.update_gen_ai_creativity()
+        self.generative_ai.update_gen_ai_creativity(self.get_customer_agents())
 
         # Advance the model's time step
         self.schedule.step()
@@ -510,7 +596,7 @@ class OnlinePlatformModel(mesa.Model):
         # Append the combined data to self.simulation_info
         self.simulation_info.append(combined_data)
 
-        self.export_data_if_final_step()
+        # self.export_data_if_final_step()
 
 
 def update_customer_satisfaction(customer_agent, products_purchased, average_order_of_purchased_product,
@@ -717,37 +803,38 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
     'purchase_threshold': [1.5]
 }"""
 
-params_ranges = {
+"""params_ranges = {
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [20],
     'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                               25, 26, 27, 28, 29, 30],
     'capacity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+    'total_steps': [1000],
+    'percentage_willing_to_share_info': [1],
+    'purchase_threshold': [1.5]
+}"""
+
+params_ranges = {
+    'num_customers': [100],
+    'num_products': [100],
+    'num_retailers': [20],
+    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    'capacity_gen_ai': [0.5, 0.9],
+    'creativity_gen_ai': [0.1, 0.5, 0.9],
     'total_steps': [100],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
 }
 
-"""params_ranges = {
-    'num_customers': [100],
-    'num_products': [100],
-    'num_retailers': [20],
-    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
-    'capacity_gen_ai': [0.1, 0.5, 0.9],
-    'creativity_gen_ai': [0.1, 0.5, 0.9],
-    'total_steps': [100],
-    'percentage_willing_to_share_info': [1],
-    'purchase_threshold': [1.5]
-}"""
-
-
 def main():
     # Assuming your model class is defined elsewhere and imported
-    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv', batch_size=10, num_cores=10)
-    #run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
+    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv',
+                                       batch_size=10, num_cores=10)
+    # run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
 
 
 if __name__ == '__main__':

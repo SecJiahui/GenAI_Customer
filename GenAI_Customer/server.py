@@ -114,6 +114,13 @@ chart_mean_purchase_position = mesa.visualization.ChartModule(
     data_collector_name='datacollector'
 )
 
+chart_mean_viewed_comments = mesa.visualization.ChartModule(
+    [
+        {"Label": "mean_viewed_comments", "Color": "#808080"},
+    ],
+    data_collector_name='datacollector'
+)
+
 chart_sharing_preferences = mesa.visualization.ChartModule(
     [
         {"Label": "Willing to Share Customers", "Color": "green"},
@@ -179,7 +186,8 @@ chart_creativity_gen_ai = mesa.visualization.ChartModule(
 
 model_params = {
     "num_customers": mesa.visualization.Slider("Number of Customers", 100, 20, 200, 5, 1),
-    "percentage_willing_to_share_info": mesa.visualization.Slider("Percentage of Customer willing to share Info", 0.5, 0, 1.0, 0.1, 1),
+    "percentage_willing_to_share_info": mesa.visualization.Slider("Percentage of Customer willing to share Info", 0.5,
+                                                                  0, 1.0, 0.1, 1),
     "num_products": mesa.visualization.Slider("Number of Products", 100, 30, 150, 10, 1),
     "num_retailers": mesa.visualization.Slider("Number of Retailers", 20, 5, 30, 2, 1),
     "learning_rate_gen_ai": mesa.visualization.Slider("Learning Rate of Gen AI", 0.3, 0, 0.9, 0.02, 1),
@@ -193,8 +201,9 @@ model_params = {
 # Create Mesa server
 server = mesa.visualization.ModularServer(
     OnlinePlatformModel,
-    [network, chart_avg_satisfaction, chart_AIC,chart_creativity_gen_ai, chart_avg_rating,
-     chart_mean_purchase_position, chart_sales, chart_num_sold_products, chart_AIC_sum, chart_satisfaction],  # Add visualization modules
+    [network, chart_avg_satisfaction,chart_AIC_sum, chart_creativity_gen_ai, chart_avg_rating,
+     chart_mean_purchase_position, chart_mean_viewed_comments, chart_sales, chart_num_sold_products, chart_satisfaction, chart_AIC],
+    # Add visualization modules
     # [network, chart_sales],  # Add visualization modules
     "Online Platform Model",
     model_params,
