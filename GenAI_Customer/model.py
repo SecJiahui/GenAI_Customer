@@ -11,6 +11,9 @@ import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 import GenAI_Customer.agent
+import warnings
+
+
 
 
 # random.seed(42)
@@ -87,9 +90,9 @@ class OnlinePlatformModel(mesa.Model):
                 # "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
                 # "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
                 "creativity_gen_ai": self.get_gen_ai_creativity,
-                "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
-                "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
-                "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
+                # "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
+                # "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
+                # "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
                 "AIC Quartic (Minimum)": lambda model: model.min_aic,
                 # "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
@@ -315,7 +318,7 @@ class OnlinePlatformModel(mesa.Model):
 
             products_to_consider = sorted_product_agents
 
-            num_products_to_consider = int(len(products_to_consider) * 0.8)
+            num_products_to_consider = min(int(len(products_to_consider) * 0.6), 100)
 
             for index, product in enumerate(products_to_consider[:num_products_to_consider]):
                 if products_purchased >= 6:
@@ -486,6 +489,9 @@ class OnlinePlatformModel(mesa.Model):
             'avg_price': [],
             'avg_quality': [],
             'avg_content': [],
+            'n_customer': [],
+            'n_retailer': [],
+            'n_product': [],
             'satisfaction': [],
             'willing_to_share': [],
             'customer_id': [],
@@ -515,6 +521,9 @@ class OnlinePlatformModel(mesa.Model):
                 # data['num_content_matched'].append(customer.num_content_matched)
                 data['mean_purchase_position'].append(customer.mean_purchase_position)
                 data['mean_viewed_comments'].append(customer.mean_viewed_comments)
+                data['n_customer'].append(self.num_customers)
+                data['n_retailer'].append(self.num_retailers)
+                data['n_product'].append(self.num_products)
 
         df = pd.DataFrame(data)
 
@@ -522,13 +531,15 @@ class OnlinePlatformModel(mesa.Model):
             # print("No data available for AIC calculation.")
             return None
 
-        X = df[['avg_price', 'avg_quality', 'avg_content', 'mean_purchase_position']]
+        X = df[['avg_price', 'avg_quality', 'avg_content', 'willing_to_share', 'mean_purchase_position']]
         for degree in range(2, max_degree + 1):
             X = np.column_stack((X, df[
                 ['avg_price', 'avg_quality', 'avg_content', 'willing_to_share', 'mean_purchase_position']] ** degree))
 
         X = sm.add_constant(X)
-        model = sm.OLS(df['satisfaction'], X).fit()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            model = sm.OLS(df['satisfaction'], X).fit()
 
         aic = model.aic
 
@@ -626,19 +637,19 @@ def update_customer_satisfaction(customer_agent, products_purchased, average_ord
         customer_agent.satisfaction -= 0.05
 
     # Update the customer's satisfaction based on the number of interest matched products
-    if num_content_matched >= 5:
+    """if num_content_matched >= 5:
         customer_agent.satisfaction += 0.1
     elif num_content_matched >= 3:
         customer_agent.satisfaction += 0.05
     elif num_content_matched == 1:
-        customer_agent.satisfaction += 0.03
+        customer_agent.satisfaction += 0.03"""
 
     # Additional logic based on average order of purchased products
     if average_order_of_purchased_product is not None:
-        if average_order_of_purchased_product <= num_products * 0.15:
+        if average_order_of_purchased_product <= min(num_products * 0.1, 20):
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.1
-        elif average_order_of_purchased_product <= num_products * 0.3:
+        elif average_order_of_purchased_product <= min(num_products * 0.2, 40):
             # Positive feedback for lower average order values
             customer_agent.satisfaction += 0.05
         else:
@@ -664,10 +675,10 @@ def update_seller_ratings_based_on_purchase(product_agent, order_of_purchased_pr
     """
     # Update seller's rating based on order_of_purchased_product
     if order_of_purchased_product is not None:
-        if order_of_purchased_product <= num_products * 0.15:
+        if order_of_purchased_product <= min(num_products * 0.1, 20):
             # Positive feedback for lower average order values
             product_agent.seller.rating += 0.05
-        elif order_of_purchased_product <= num_products * 0.3:
+        elif order_of_purchased_product <= min(num_products * 0.2, 40):
             # Positive feedback for lower average order values
             product_agent.seller.rating += 0.03
         else:
@@ -790,45 +801,45 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
 
 # Specified parameter ranges
 """params_ranges = {
-    'num_customers': [50, 80, 100, 150],
-    'num_products': [50, 80, 100, 150],
-    'num_retailers': [10, 20, 30, 40],
+    'num_customers': [100],
+    'num_products': [25, 50, 100, 200, 300, 400],
+    'num_retailers': [20],
     'learning_rate_gen_ai': [0],
     'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
                                25, 26, 27, 28, 29, 30],
     'capacity_gen_ai': [0],
     'creativity_gen_ai': [0],
-    'total_steps': [1000],
+    'total_steps': [100],
+    'percentage_willing_to_share_info': [0],
+    'purchase_threshold': [1.5]
+}
+"""
+params_ranges = {
+    'num_customers': [100],
+    'num_products': [100],
+    'num_retailers': [20],
+    'learning_rate_gen_ai': [0],
+    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+                               25, 26, 27, 28, 29, 30],
+    'capacity_gen_ai': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
+    'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+    'total_steps': [100],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
-}"""
+}
 
 """params_ranges = {
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [20],
-    'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-                               25, 26, 27, 28, 29, 30],
-    'capacity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'total_steps': [1000],
-    'percentage_willing_to_share_info': [1],
-    'purchase_threshold': [1.5]
-}"""
-
-params_ranges = {
-    'num_customers': [100],
-    'num_products': [100],
-    'num_retailers': [20],
     'learning_rate_gen_ai': [0.1, 0.5, 0.9],
     'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    'capacity_gen_ai': [0.5, 0.9],
+    'capacity_gen_ai': [0.1, 0.5, 0.9],
     'creativity_gen_ai': [0.1, 0.5, 0.9],
     'total_steps': [100],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
-}
+}"""
 
 def main():
     # Assuming your model class is defined elsewhere and imported

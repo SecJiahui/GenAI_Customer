@@ -70,9 +70,9 @@ class CustomerAgent(mesa.Agent):
         self.num_content_matched = 0
 
     def get_satisfaction_level(self):
-        if self.satisfaction >= 0.8:
+        if self.satisfaction >= 4:
             return State.HighSatisfaction
-        elif 0.4 <= self.satisfaction < 0.8:
+        elif 2 <= self.satisfaction < 4:
             return State.MediumSatisfaction
         else:
             return State.LowSatisfaction
@@ -260,7 +260,6 @@ class SellerAgent(mesa.Agent):
 class GenerativeAI:
     def __init__(self, model, learning_rate, capacity):
         # Initialize necessary attributes
-        self.customers_info = {}
         self.learning_rate = learning_rate
         self.model = model
         self.capacity = capacity
