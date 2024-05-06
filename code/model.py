@@ -16,7 +16,7 @@ import warnings
 
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
-                 learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai, capacity_gen_ai, total_steps,
+                 learning_rate_gen_ai, duplications_list, creativity_gen_ai, capacity_gen_ai, total_steps,
                  purchase_threshold):
         super().__init__()
         self.step_counter = 0
@@ -38,7 +38,7 @@ class OnlinePlatformModel(mesa.Model):
         self.avg_customer_satisfaction = 0
 
         self.learning_rate_gen_ai = learning_rate_gen_ai if capacity_gen_ai != 0 else 0
-        self.learning_rate_customer = learning_rate_customer
+        self.duplications_list = duplications_list
         self.capacity_gen_ai = capacity_gen_ai
         self.creativity_gen_ai = creativity_gen_ai if capacity_gen_ai != 0 else 0
 
@@ -586,7 +586,7 @@ class OnlinePlatformModel(mesa.Model):
             'num_retailers': self.num_retailers,
             'num_customers_willing_to_share_info': self.num_customers_willing_to_share_info,
             'learning_rate_gen_ai': self.learning_rate_gen_ai,
-            'learning_rate_customer': self.learning_rate_customer,
+            'duplications_list': self.duplications_list,
             'capacity_gen_ai': self.capacity_gen_ai,
             'creativity_gen_ai': self.creativity_gen_ai,
             'total_steps': self.total_steps
@@ -796,15 +796,22 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
 # Specified parameter ranges
 
 params_ranges = {
+    """
+    Parameters:
+    duplications_list - the numer of repeated simulation of same parameter combination.
+    total_steps - the number of time steps of single simulation
+    """
+    
     'num_customers': [100],
     'num_products': [100],
     'num_retailers': [40],
     'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+    'duplications_list': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
                                25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
     'capacity_gen_ai': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
     'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     'total_steps': [100],
+    #'total_steps': [1000],
     'percentage_willing_to_share_info': [1],
     'purchase_threshold': [1.5]
 }
