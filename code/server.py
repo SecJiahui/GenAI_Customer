@@ -1,7 +1,7 @@
 import mesa
 
-from GenAI_Customer.agent import State
-from GenAI_Customer.model import OnlinePlatformModel
+from code.agent import State
+from code.model import OnlinePlatformModel
 
 
 def customer_network_portrayal(G):

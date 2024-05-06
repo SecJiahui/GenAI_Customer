@@ -4,7 +4,7 @@ import solara
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator
 from mesa.experimental import JupyterViz, make_text
-from GenAI_Customer.model import State, VirusOnNetwork, number_infected
+from code.model import State, VirusOnNetwork, number_infected
 
 
 def agent_portrayal(graph):

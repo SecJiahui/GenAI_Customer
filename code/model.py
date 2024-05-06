@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-import GenAI_Customer.agent
+import code.agent
 import warnings
 
 
@@ -63,9 +63,9 @@ class OnlinePlatformModel(mesa.Model):
 
         self.datacollector = mesa.DataCollector(
             {
-                "LowSatisfaction": GenAI_Customer.agent.number_LowSatisfaction,
-                "MediumSatisfaction": GenAI_Customer.agent.number_MediumSatisfaction,
-                "HighSatisfaction": GenAI_Customer.agent.number_HighSatisfaction,
+                "LowSatisfaction": code.agent.number_LowSatisfaction,
+                "MediumSatisfaction": code.agent.number_MediumSatisfaction,
+                "HighSatisfaction": code.agent.number_HighSatisfaction,
                 "Sales": lambda model: model.total_sales,
                 "Sales (Willing)": lambda model: model.sales_willing,
                 "Sales (Unwilling)": lambda model: model.sales_unwilling,
@@ -92,40 +92,40 @@ class OnlinePlatformModel(mesa.Model):
                 "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
                 "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
 
-                "AIC Quadratic": self.calculate_quadratic_aic,
-                "AIC Cubic": self.calculate_cubic_aic,
-                "AIC Quartic": self.calculate_quartic_aic,
-                "AIC Hierarchical":self.calculate_hierarchical_aic,
+                "AIC Quadratic": lambda model: self.calculate_polynomial_aic(2),
+                "AIC Cubic": lambda model: self.calculate_polynomial_aic(3),
+                "AIC Quartic": lambda model: self.calculate_polynomial_aic(4),
+                # "AIC Hierarchical":self.calculate_hierarchical_aic,
             }
         )
 
         # Create customers
         for i in range(self.num_customers_willing_to_share_info):
             unique_id = self.get_unique_id()
-            customer = GenAI_Customer.agent.CustomerAgent(unique_id, self, True)
+            customer = code.agent.CustomerAgent(unique_id, self, True)
             self.schedule.add(customer)
             self.grid.place_agent(customer, i)
 
         for i in range(self.num_customers_willing_to_share_info, self.num_customers):
             unique_id = self.get_unique_id()
-            customer = GenAI_Customer.agent.CustomerAgent(unique_id, self, False)
+            customer = code.agent.CustomerAgent(unique_id, self, False)
             self.schedule.add(customer)
             self.grid.place_agent(customer, i)
 
         # Create retailers
         for i in range(self.num_retailers):
             unique_id = self.get_unique_id()
-            retailer = GenAI_Customer.agent.SellerAgent(unique_id, self)
+            retailer = code.agent.SellerAgent(unique_id, self)
             self.schedule.add(retailer)
 
         # Create products
         for i in range(self.num_products):
             unique_id = self.get_unique_id()
-            product = GenAI_Customer.agent.ProductAgent(unique_id, self)
+            product = code.agent.ProductAgent(unique_id, self)
 
             # Randomly select a retailer for the product
             retailer = random.choice(
-                [agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.SellerAgent)])
+                [agent for agent in self.schedule.agents if isinstance(agent, code.agent.SellerAgent)])
             product.seller = retailer
             retailer.products.append(product)
 
@@ -133,13 +133,14 @@ class OnlinePlatformModel(mesa.Model):
 
         # Creat platform owner
         unique_id = self.get_unique_id()
-        platform_owner = GenAI_Customer.agent.PlatformOwnerAgent(unique_id, self, self.learning_rate_gen_ai,
-                                                                 self.capacity_gen_ai,
-                                                                 self.creativity_gen_ai)
+        platform_owner = code.agent.PlatformOwnerAgent(unique_id, self, self.learning_rate_gen_ai,
+                                                       self.capacity_gen_ai,
+                                                       self.creativity_gen_ai)
         self.schedule.add(platform_owner)
 
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent
+        self.generative_ai = code.agent.GenerativeAI(self, platform_owner.learning_rate_gen_ai,
+                                                     platform_owner.capacity_gen_ai)
         self.generative_ai.initialize_gen_ai_creativity(platform_owner.creativity_gen_ai, self.get_customer_agents())
 
         self.running = True
@@ -165,104 +166,104 @@ class OnlinePlatformModel(mesa.Model):
 
     def get_product_agents(self):
         """Return a list of all product agents in the model."""
-        return [agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.ProductAgent)]
+        return [agent for agent in self.schedule.agents if isinstance(agent, code.agent.ProductAgent)]
 
     def get_customer_agents(self):
         """Return a list of all customer agents in the model."""
-        return [agent for agent in self.schedule.agents if isinstance(agent, GenAI_Customer.agent.CustomerAgent)]
+        return [agent for agent in self.schedule.agents if isinstance(agent, code.agent.CustomerAgent)]
 
     def get_customer_agents_willing(self):
         """Return a list of all customer agents willing to share information in the model."""
         return [customer_agent for customer_agent in self.schedule.agents if
-                isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and
+                isinstance(customer_agent, code.agent.CustomerAgent) and
                 customer_agent.willing_to_share_info]
 
     def get_customer_agents_unwilling(self):
         """Return a list of all customer agents willing to share information in the model."""
         return [customer_agent for customer_agent in self.schedule.agents if
-                isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and not
+                isinstance(customer_agent, code.agent.CustomerAgent) and not
                 customer_agent.willing_to_share_info]
 
     def get_average_satisfaction(self):
         """Calculate average customer satisfaction."""
         satisfaction_values = [customer_agent.satisfaction for customer_agent in self.schedule.agents
-                               if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent)]
+                               if isinstance(customer_agent, code.agent.CustomerAgent)]
         return np.mean(satisfaction_values) if satisfaction_values else 0
 
     def get_average_viewed_comments(self):
         """Calculate average customer satisfaction."""
         viewed_comments = [customer_agent.mean_viewed_comments for customer_agent in self.schedule.agents
-                           if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent)]
+                           if isinstance(customer_agent, code.agent.CustomerAgent)]
         return np.mean(viewed_comments) if viewed_comments else 0
 
     def get_average_rating(self):
         """Calculate average seller rating."""
         rating_values = [seller_agent.rating for seller_agent in self.schedule.agents
-                         if isinstance(seller_agent, GenAI_Customer.agent.SellerAgent)]
+                         if isinstance(seller_agent, code.agent.SellerAgent)]
         return np.mean(rating_values) if rating_values else 0
 
     def average_satisfaction_willing_to_share(self):
         """Calculate average satisfaction for customers willing to share information."""
         satisfaction_values = [customer_agent.satisfaction for customer_agent in self.schedule.agents if
-                               isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and
+                               isinstance(customer_agent, code.agent.CustomerAgent) and
                                customer_agent.willing_to_share_info]
         return np.mean(satisfaction_values) if satisfaction_values else 0
 
     def average_satisfaction_unwilling_to_share(self):
         """Calculate average satisfaction for customers unwilling to share information."""
         satisfaction_values = [customer_agent.satisfaction for customer_agent in self.schedule.agents
-                               if isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and not
+                               if isinstance(customer_agent, code.agent.CustomerAgent) and not
                                customer_agent.willing_to_share_info]
         return np.mean(satisfaction_values) if satisfaction_values else 0
 
     def average_rating(self):
         """Calculate average customer satisfaction."""
         rating_values = [seller_agent.rating for seller_agent in self.schedule.agents
-                         if isinstance(seller_agent, GenAI_Customer.agent.SellerAgent)]
+                         if isinstance(seller_agent, code.agent.SellerAgent)]
         return np.mean(rating_values) if rating_values else 0
 
     def mean_purchase_position(self):
         """Calculate average purchase position for customers."""
         purchase_position = [agent.mean_purchase_position for agent in self.schedule.agents
                              if isinstance(agent,
-                                           GenAI_Customer.agent.CustomerAgent) and agent.mean_purchase_position is not None]
+                                           code.agent.CustomerAgent) and agent.mean_purchase_position is not None]
         return np.mean(purchase_position) if purchase_position else 0
 
     def mean_purchase_position_willing_to_share(self):
         """Calculate average satisfaction for customers willing to share information."""
         purchase_position = [customer_agent.mean_purchase_position for customer_agent in self.schedule.agents if
-                             isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and
+                             isinstance(customer_agent, code.agent.CustomerAgent) and
                              customer_agent.willing_to_share_info and customer_agent.mean_purchase_position is not None]
         return np.mean(purchase_position) if purchase_position else 0
 
     def mean_purchase_position_unwilling_to_share(self):
         """Calculate average satisfaction for customers willing to share information."""
         purchase_position = [customer_agent.mean_purchase_position for customer_agent in self.schedule.agents if
-                             isinstance(customer_agent, GenAI_Customer.agent.CustomerAgent) and not
+                             isinstance(customer_agent, code.agent.CustomerAgent) and not
                              customer_agent.willing_to_share_info and customer_agent.mean_purchase_position is not None]
         return np.mean(purchase_position) if purchase_position else 0
 
     def count_willing_to_share_customers(self):
         """Count the number of customers willing to share their information."""
         return sum(1 for agent in self.schedule.agents
-                   if isinstance(agent, GenAI_Customer.agent.CustomerAgent) and agent.willing_to_share_info)
+                   if isinstance(agent, code.agent.CustomerAgent) and agent.willing_to_share_info)
 
     def count_unwilling_to_share_customers(self):
         """Count the number of customers willing to share their information."""
         return sum(1 for agent in self.schedule.agents
-                   if isinstance(agent, GenAI_Customer.agent.CustomerAgent) and not agent.willing_to_share_info)
+                   if isinstance(agent, code.agent.CustomerAgent) and not agent.willing_to_share_info)
 
     def count_products(self):
         """Count the number of products."""
         return sum(1 for agent in self.schedule.agents
-                   if isinstance(agent, GenAI_Customer.agent.ProductAgent))
+                   if isinstance(agent, code.agent.ProductAgent))
 
     def print_all_product_parameters(self):
         """
         Print the parameters of all product agents in the model, each product in one line.
         """
         for agent in self.schedule.agents:
-            if isinstance(agent, GenAI_Customer.agent.ProductAgent):
+            if isinstance(agent, code.agent.ProductAgent):
                 product_info = (
                     f"Product ID: {agent.unique_id}, "
                     f"Price: {agent.price}, "
@@ -319,7 +320,8 @@ class OnlinePlatformModel(mesa.Model):
 
                 # print(f"Customer {customer.unique_id} is making a decision for product {product.unique_id}:")
                 decision = customer.make_purchase_decision(product, customer.willing_to_share_info and use_gen_ai,
-                                                           self.generative_ai.creativity[customer.unique_id], self.learning_rate_gen_ai,
+                                                           self.generative_ai.creativity[customer.unique_id],
+                                                           self.learning_rate_gen_ai,
                                                            self.purchase_threshold)
                 customer.make_comment(product)
 
@@ -400,7 +402,7 @@ class OnlinePlatformModel(mesa.Model):
     def export_data_if_final_step(self):
         if self.step_counter == self.total_steps:
             # self.export_purchase_decisions_to_csv_single_run("purchase_decisions.csv")
-            self.export_simulation_data_to_csv("simulation.csv")
+            self.export_simulation_data_to_csv("../simulation_data/single_simulation.csv")
             print("purchase decisions exported")
 
     def calculate_polynomial_aic_test(self, max_degree, willing_to_share=None):
@@ -808,10 +810,8 @@ params_ranges = {
 }
 
 
-
 def main():
-    # Assuming your model class is defined elsewhere and imported
-    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, 'combined_simulation_data_batch.csv',
+    run_and_export_combined_data_batch(OnlinePlatformModel, params_ranges, '../simulation_data/combined_simulation_data_batch.csv',
                                        batch_size=10, num_cores=10)
     # run_and_export_combined_data(OnlinePlatformModel, params_ranges, 'combined_simulation_data.csv')
 
