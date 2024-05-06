@@ -29,22 +29,6 @@ def number_HighSatisfaction(model):
     return number_state(model, State.HighSatisfaction)
 
 
-def initialize_interests():
-    potential_interests = [
-        "Sports", "Technology", "Fashion", "Travel", "Music",
-        "Cooking", "Art", "Literature", "Cinema", "Gaming"
-    ]
-    return random.sample(potential_interests, k=2)
-
-
-def initialize_keyword():
-    potential_keyword = [
-        "Sports", "Technology", "Fashion", "Travel", "Music",
-        "Cooking", "Art", "Literature", "Cinema", "Gaming"
-    ]
-    return random.sample(potential_keyword, k=5)
-
-
 def initialize_brand():
     potential_brand = ["A", "B", "C", "D", "E"]
     return random.sample(potential_brand, 1)
@@ -56,7 +40,6 @@ class CustomerAgent(mesa.Agent):
         self.shopping_history = []
         self.review_history = []
         self.shopping_amount = 0
-        self.interests = initialize_interests()  # initialize interest
         self.willing_to_share_info = willing_to_share  # customer agree to share their information
         self.last_satisfaction = 0
         self.satisfaction = random.uniform(0.3, 0.7)
@@ -118,7 +101,6 @@ class CustomerAgent(mesa.Agent):
         price_factor = (1 - self.price_sensitivity) * (1 - product_price / 10)
         # positive influence for higher quality_sensitivity
         quality_factor = self.quality_sensitivity * product_quality
-        # Adjust content factor based on whether generative AI is used
 
         # Initially set the content factor based on the product's content score.
         # The use of generative AI and customer interests can further influence this factor.
@@ -143,9 +125,6 @@ class CustomerAgent(mesa.Agent):
             f'Decision Factors for product: {product.unique_id}, '
             f'with Price Factor: {price_factor}, Quality Factor: {quality_factor}，Content Factor: {content_factor}'
         )"""
-
-        # Increase decision factor if product keywords match customer interests
-
 
         # Increase decision factor if product brand matches customer shopping list
         if brand in self.shopping_history:
@@ -230,7 +209,6 @@ class ProductAgent(mesa.Agent):
         self.price = 10 * np.random.beta(1, 1) if price is None else price
         self.quality = np.random.beta(1, 1) if quality is None else quality
         self.content_score = np.random.beta(4, 7) if content is None else content
-        self.keywords = initialize_keyword() if keywords is None else keywords
         self.brand = initialize_brand() if brand is None else brand
         self.customers_comment = {}
         self.sales_count = 0
@@ -255,6 +233,18 @@ class SellerAgent(mesa.Agent):
     def step(self):
         # Implement retailer behavior, e.g., updating product availability, offering discounts, etc.
         pass
+
+
+def generate_basic_content(product_agents):
+    """
+    Implement basic production content logic by randomly shuffling product agents.
+    """
+    # Shuffle the list of product agents to simulate recommendation
+    shuffled_agents = list(product_agents)  # Create a copy to avoid modifying the original list
+    random.shuffle(shuffled_agents)
+
+    basic_content = shuffled_agents
+    return basic_content
 
 
 class GenerativeAI:
@@ -287,13 +277,3 @@ class GenerativeAI:
             # Update the customer's last satisfaction
             customer.last_satisfaction = customer.satisfaction
 
-    def generate_basic_content(self, product_agents):
-        """
-        Implement basic production content logic by randomly shuffling product agents.
-        """
-        # Shuffle the list of product agents to simulate recommendation
-        shuffled_agents = list(product_agents)  # Create a copy to avoid modifying the original list
-        random.shuffle(shuffled_agents)
-
-        basic_content = shuffled_agents
-        return basic_content

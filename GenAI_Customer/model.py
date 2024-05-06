@@ -14,12 +14,6 @@ import GenAI_Customer.agent
 import warnings
 
 
-
-
-# random.seed(42)
-# np.random.seed(42)
-
-
 class OnlinePlatformModel(mesa.Model):
     def __init__(self, num_customers, percentage_willing_to_share_info, num_products, num_retailers,
                  learning_rate_gen_ai, learning_rate_customer, creativity_gen_ai, capacity_gen_ai, total_steps,
@@ -80,28 +74,28 @@ class OnlinePlatformModel(mesa.Model):
                 "Sold Products (Unwilling)": lambda model: model.num_sold_products_unwilling,
                 "Average Seller Rating": self.average_rating,
                 "Average Satisfaction": self.get_average_satisfaction,
-                # "Avg Satisfaction (Willing)": self.average_satisfaction_willing_to_share,
-                # "Avg Satisfaction (Unwilling)": self.average_satisfaction_unwilling_to_share,
+                "Avg Satisfaction (Willing)": self.average_satisfaction_willing_to_share,
+                "Avg Satisfaction (Unwilling)": self.average_satisfaction_unwilling_to_share,
                 "Willing to Share Customers": self.count_willing_to_share_customers,
                 "Unwilling to Share Customers": self.count_unwilling_to_share_customers,
                 "Number of Products": self.count_products,
                 "mean_viewed_comments": self.get_average_viewed_comments,
                 "mean_purchase_position": self.mean_purchase_position,
-                # "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
-                # "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
+                "mean_purchase_position (Willing)": self.mean_purchase_position_willing_to_share,
+                "mean_purchase_position (Unwilling)": self.mean_purchase_position_unwilling_to_share,
                 "creativity_gen_ai": self.get_gen_ai_creativity,
-                # "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
-                # "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
-                # "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
+                "AIC Linear (Sum)": lambda model: self.calculate_polynomial_aic(1),
+                "AIC Quadratic (Sum)": lambda model: self.calculate_polynomial_aic(2),
+                "AIC Cubic (Sum)": lambda model: self.calculate_polynomial_aic(3),
                 "AIC Quartic (Sum)": lambda model: self.calculate_polynomial_aic(4),
                 "AIC Quartic (Minimum)": lambda model: model.min_aic,
-                # "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
-                # "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
+                "AIC Quartic (Willing)": lambda model: self.calculate_polynomial_aic(4, True),
+                "AIC Quartic (Unwilling)": lambda model: self.calculate_polynomial_aic(4, False),
 
-                # "AIC Quadratic": self.calculate_quadratic_aic,
-                # "AIC Cubic": self.calculate_cubic_aic,
-                # "AIC Quartic": self.calculate_quartic_aic,
-                # "AIC Hierarchical":self.calculate_hierarchical_aic,
+                "AIC Quadratic": self.calculate_quadratic_aic,
+                "AIC Cubic": self.calculate_cubic_aic,
+                "AIC Quartic": self.calculate_quartic_aic,
+                "AIC Hierarchical":self.calculate_hierarchical_aic,
             }
         )
 
@@ -145,8 +139,7 @@ class OnlinePlatformModel(mesa.Model):
         self.schedule.add(platform_owner)
 
         # Create Generative AI
-        self.generative_ai = GenAI_Customer.agent.GenerativeAI(self, platform_owner.learning_rate_gen_ai,
-                                                               platform_owner.capacity_gen_ai)
+        self.generative_ai = GenAI_Customer.agent
         self.generative_ai.initialize_gen_ai_creativity(platform_owner.creativity_gen_ai, self.get_customer_agents())
 
         self.running = True
@@ -274,7 +267,6 @@ class OnlinePlatformModel(mesa.Model):
                     f"Product ID: {agent.unique_id}, "
                     f"Price: {agent.price}, "
                     f"Quality: {agent.quality}, "
-                    f"Keywords: {', '.join(agent.keywords)}, "
                     f"Content Score: {agent.content_score}, "
                     f"Brand: {', '.join(agent.brand)}, "
                     f"Sales Count: {agent.sales_count}"
@@ -800,27 +792,14 @@ def run_and_export_combined_data_batch(model_class, params_ranges, export_filena
 
 
 # Specified parameter ranges
-"""params_ranges = {
-    'num_customers': [100],
-    'num_products': [25, 50, 100, 200, 300, 400],
-    'num_retailers': [20],
-    'learning_rate_gen_ai': [0],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-                               25, 26, 27, 28, 29, 30],
-    'capacity_gen_ai': [0],
-    'creativity_gen_ai': [0],
-    'total_steps': [100],
-    'percentage_willing_to_share_info': [0],
-    'purchase_threshold': [1.5]
-}
-"""
+
 params_ranges = {
     'num_customers': [100],
     'num_products': [100],
-    'num_retailers': [20],
-    'learning_rate_gen_ai': [0],
+    'num_retailers': [40],
+    'learning_rate_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-                               25, 26, 27, 28, 29, 30],
+                               25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
     'capacity_gen_ai': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1],
     'creativity_gen_ai': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
     'total_steps': [100],
@@ -828,18 +807,7 @@ params_ranges = {
     'purchase_threshold': [1.5]
 }
 
-"""params_ranges = {
-    'num_customers': [100],
-    'num_products': [100],
-    'num_retailers': [20],
-    'learning_rate_gen_ai': [0.1, 0.5, 0.9],
-    'learning_rate_customer': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    'capacity_gen_ai': [0.1, 0.5, 0.9],
-    'creativity_gen_ai': [0.1, 0.5, 0.9],
-    'total_steps': [100],
-    'percentage_willing_to_share_info': [1],
-    'purchase_threshold': [1.5]
-}"""
+
 
 def main():
     # Assuming your model class is defined elsewhere and imported
